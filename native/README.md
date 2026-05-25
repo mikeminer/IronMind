@@ -18,9 +18,10 @@ The native implementation should stay model-specific. The first target is Qwen3-
 3. `weights_qwen3.c`: map required tensors into typed model views.
 4. `kernels_avx2.c`: baseline quantized dot/matmul kernels.
 5. `kernels_avx512.c`: optional high-end laptop fast path.
-6. `forward_qwen3.c`: RMSNorm, QKV, RoPE, attention, FFN.
-7. `moe_qwen3.c`: router top-k and expert dispatch for Qwen3MoE.
-8. `kv_cache.c`: RAM KV state and IronKV save/restore.
-9. `eval_vectors.c`: logit/token regression runner.
+6. `ironmind_math.c`: scalar RMSNorm, RoPE, softmax, attention kernels. AVX paths come next.
+7. `forward_qwen3.c`: QKV projection wiring, attention block, FFN block.
+8. `moe_qwen3.c`: router top-k and expert dispatch for Qwen3MoE.
+9. `kv_cache.c`: RAM KV state and IronKV save/restore.
+10. `eval_vectors.c`: logit/token regression runner.
 
 The rule is simple: if a model does not match the selected target contract, the native backend should refuse it early.

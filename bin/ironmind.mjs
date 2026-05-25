@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import { inspectGguf, summarizeGguf } from "../lib/gguf.mjs";
 import { validateIronMindTarget } from "../lib/target.mjs";
 import { contextStoreStats, defaultContextDir, saveContextSnapshot } from "../lib/contextStore.mjs";
+import { loadQwen3Tokenizer } from "../lib/tokenizer.mjs";
+import { loadQwenTensorMap, summarizeTensorMap } from "../lib/tensorMap.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
@@ -76,6 +78,8 @@ Usage:
            [--kv-disk-dir ~/.ironmind/kvcache] [--kv-disk-space-mb 16384]
   ironmind doctor
   ironmind inspect <model.gguf>
+  ironmind tokenize <model.gguf> <text>
+  ironmind map <model.gguf>
 
 Environment:
   IRONMIND_MODEL
@@ -390,12 +394,42 @@ async function inspectModel(filePath) {
   for (const warning of validation.warnings) console.log(`  warning             ${warning}`);
 }
 
+async function tokenizeModel(args) {
+  const filePath = args[0];
+  const text = args.slice(1).join(" ");
+  if (!filePath || !text) {
+    console.error("usage: ironmind tokenize <model.gguf> <text>");
+    process.exitCode = 2;
+    return;
+  }
+  const tokenizer = await loadQwen3Tokenizer(filePath);
+  const ids = tokenizer.encode(text);
+  console.log(JSON.stringify({ summary: tokenizer.summary(), ids, count: ids.length, decoded: tokenizer.decode(ids) }, null, 2));
+}
+
+async function mapModel(filePath) {
+  if (!filePath) {
+    console.error("usage: ironmind map <model.gguf>");
+    process.exitCode = 2;
+    return;
+  }
+  const map = await loadQwenTensorMap(filePath);
+  console.log("IronMind tensor map");
+  for (const [key, value] of Object.entries(summarizeTensorMap(map))) {
+    console.log(`  ${key.padEnd(16)} ${value}`);
+  }
+  for (const missing of map.missing.slice(0, 20)) console.log(`  missing          ${missing}`);
+  if (map.missing.length > 20) console.log(`  missing          ... ${map.missing.length - 20} more`);
+}
+
 async function main() {
   const { command, config } = parseArgs(process.argv.slice(2));
 
   if (command === "help") return usage();
   if (command === "doctor") return doctor(config);
   if (command === "inspect") return inspectModel(process.argv.slice(3)[0]);
+  if (command === "tokenize") return tokenizeModel(process.argv.slice(3));
+  if (command === "map") return mapModel(process.argv.slice(3)[0]);
   if (command !== "serve") return usage();
 
   const server = createServer(config);

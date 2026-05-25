@@ -68,6 +68,8 @@ Inspect a GGUF before trying to run it:
 
 ```powershell
 ironmind inspect C:\path\to\model.gguf
+ironmind map C:\path\to\model.gguf
+ironmind tokenize C:\path\to\model.gguf "Ciao mondo"
 ```
 
 Build the first native GGUF inspector:
@@ -75,6 +77,7 @@ Build the first native GGUF inspector:
 ```powershell
 npm run native:build
 .\build\Release\ironmind-inspect.exe C:\path\to\model.gguf
+npm run native:test
 ```
 
 Run the built-in 100-question evaluation suite:
@@ -101,12 +104,14 @@ Planned core milestones:
 1. GGUF metadata reader for the selected target model. Implemented as `ironmind inspect` and native `ironmind-inspect`.
 2. Qwen3 prompt rendering tests. Implemented in `lib/qwen3Prompt.mjs`.
 3. Disk context store for 100k+ token sessions. Implemented as prompt-prefix snapshots today, native KV payload next.
-4. Tokenizer compatibility.
-5. Quantized CPU matmul kernels for AVX2/AVX512.
-6. Attention, RoPE, and KV-cache snapshots in RAM.
-7. Native tool-call replay and canonicalization.
-8. Evaluation suite for physics, mathematics, and defensive security. Implemented as IronMind Eval 100.
-9. Replace the bootstrap runtime path with the IronMind CPU backend.
+4. Tokenizer compatibility. Implemented for Qwen3 GGUF `gpt2/qwen2` BPE.
+5. Tensor mapping. Implemented for dense Qwen3 and Qwen3MoE tensor names.
+6. Scalar RMSNorm, RoPE, softmax, and attention kernels. Implemented in JS and native C.
+7. Quantized CPU matmul kernels for AVX2/AVX512.
+8. KV-cache snapshots in RAM and native IronKV payloads.
+9. Native tool-call replay and canonicalization.
+10. Evaluation suite for physics, mathematics, and defensive security. Implemented as IronMind Eval 100.
+11. Replace the bootstrap runtime path with the IronMind CPU backend.
 
 ## License
 
