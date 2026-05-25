@@ -14,6 +14,15 @@ The bootstrap keeps the product surface usable while the native backend is devel
 
 During pre-alpha, layer 6 is represented by an Ollama/llama.cpp-compatible local backend.
 
+## Implemented Foundations
+
+- GGUF metadata and tensor-directory inspector: `lib/gguf.mjs`.
+- Qwen3/Qwen3MoE target validator: `lib/target.mjs`.
+- Qwen3 chat/tool prompt renderer: `lib/qwen3Prompt.mjs`.
+- IronKV disk-cache container: `lib/ironkv.mjs`.
+
+These are not the final inference core yet. They are the first model-specific contracts the native engine must obey.
+
 ## Native CPU Target
 
 The first native target should be a single GGUF quantization of a practical model for 64GB RAM machines.
@@ -27,6 +36,19 @@ The native core should prioritize:
 - AVX2 baseline kernels;
 - AVX512/VNNI fast path when available;
 - deterministic prompt rendering tests.
+
+## Milestone Order
+
+1. Validate the selected GGUF and refuse unknown architectures.
+2. Render Qwen3 prompts byte-for-byte from IronMind, independent of Ollama.
+3. Read tokenizer metadata and implement tokenization tests.
+4. Map model tensors into typed weight views.
+5. Implement RMSNorm, RoPE, attention, and dense FFN path.
+6. Add MoE router and expert dispatch for Qwen3MoE.
+7. Add AVX2 baseline quantized matmul.
+8. Add AVX512/VNNI kernels where available.
+9. Save RAM KV state into IronKV and restore it across process restarts.
+10. Add logit/token-vector regression tests.
 
 ## API Surface
 

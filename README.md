@@ -59,6 +59,19 @@ Health check:
 ironmind doctor
 ```
 
+Inspect a GGUF before trying to run it:
+
+```powershell
+ironmind inspect C:\path\to\model.gguf
+```
+
+Build the first native GGUF inspector:
+
+```powershell
+npm run native:build
+.\build\Release\ironmind-inspect.exe C:\path\to\model.gguf
+```
+
 OpenAI-compatible example:
 
 ```powershell
@@ -73,13 +86,14 @@ The bootstrap intentionally keeps the API, UI, session model, and model target s
 
 Planned core milestones:
 
-1. GGUF metadata reader for the selected target model.
-2. Tokenizer and prompt rendering tests.
-3. Quantized CPU matmul kernels for AVX2/AVX512.
-4. Attention and KV-cache snapshots in RAM.
-5. Disk KV-cache format with prefix reuse.
-6. Native tool-call replay and canonicalization.
-7. Replace the bootstrap runtime path with the IronMind CPU backend.
+1. GGUF metadata reader for the selected target model. Implemented as `ironmind inspect` and native `ironmind-inspect`.
+2. Qwen3 prompt rendering tests. Implemented in `lib/qwen3Prompt.mjs`.
+3. Disk KV-cache container. Implemented as IronKV v1 metadata/payload format.
+4. Tokenizer compatibility.
+5. Quantized CPU matmul kernels for AVX2/AVX512.
+6. Attention, RoPE, and KV-cache snapshots in RAM.
+7. Native tool-call replay and canonicalization.
+8. Replace the bootstrap runtime path with the IronMind CPU backend.
 
 ## License
 

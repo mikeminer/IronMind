@@ -4,6 +4,8 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
+import { inspectGguf, summarizeGguf } from "../lib/gguf.mjs";
+import { validateIronMindTarget } from "../lib/target.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
@@ -63,6 +65,7 @@ function usage() {
 Usage:
   ironmind [serve] [--host 127.0.0.1] [--port 4141] [--model qwen3-coder:30b] [--ctx 32768]
   ironmind doctor
+  ironmind inspect <model.gguf>
 
 Environment:
   IRONMIND_MODEL
@@ -342,11 +345,32 @@ async function doctor(config) {
   }
 }
 
+async function inspectModel(filePath) {
+  if (!filePath) {
+    console.error("usage: ironmind inspect <model.gguf>");
+    process.exitCode = 2;
+    return;
+  }
+
+  const info = await inspectGguf(filePath);
+  const summary = summarizeGguf(info);
+  const validation = validateIronMindTarget(info);
+
+  console.log("IronMind GGUF inspector");
+  for (const [key, value] of Object.entries(summary)) {
+    console.log(`  ${key.padEnd(20)} ${value ?? "-"}`);
+  }
+  console.log(`  target              ${validation.ok ? "compatible" : "not compatible"}`);
+  for (const issue of validation.issues) console.log(`  issue               ${issue}`);
+  for (const warning of validation.warnings) console.log(`  warning             ${warning}`);
+}
+
 async function main() {
   const { command, config } = parseArgs(process.argv.slice(2));
 
   if (command === "help") return usage();
   if (command === "doctor") return doctor(config);
+  if (command === "inspect") return inspectModel(process.argv.slice(3)[0]);
   if (command !== "serve") return usage();
 
   const server = createServer(config);

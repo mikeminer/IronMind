@@ -1,6 +1,7 @@
 node_modules/
 .env
 .ironmind/
+build/
 *.log
 dist/
 coverage/

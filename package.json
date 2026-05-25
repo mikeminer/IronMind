@@ -9,7 +9,10 @@
   "scripts": {
     "start": "node ./bin/ironmind.mjs serve",
     "doctor": "node ./bin/ironmind.mjs doctor",
-    "check": "node --check ./bin/ironmind.mjs"
+    "inspect": "node ./tools/inspect-gguf.mjs",
+    "native:build": "cmake -S . -B build && cmake --build build --config Release",
+    "test": "node ./tools/test-foundations.mjs",
+    "check": "node --check ./bin/ironmind.mjs && node --check ./tools/inspect-gguf.mjs && node ./tools/test-foundations.mjs"
   },
   "engines": {
     "node": ">=18"
