@@ -23,6 +23,7 @@ Open http://127.0.0.1:4141.
 ## Why IronMind
 
 IronMind targets machines like an i9 laptop with 64GB RAM: enough memory for strong quantized 14B-32B models, but not enough for DwarfStar's DeepSeek V4 Flash class.
+The context target is 100k+ tokens, with RAM used for the active working set and disk used for persistent prefix/KV state.
 
 The first recommended target is `qwen3-coder:30b` because it is useful for coding agents, has a practical memory footprint, and gives IronMind a narrow model path to optimize around.
 
@@ -41,17 +42,21 @@ IronMind is organized around a vertical local stack:
 ## Run
 
 ```powershell
-ironmind --model qwen3-coder:30b --ctx 32768
+ironmind --model qwen3-coder:30b --ctx 131072 --kv-disk-dir C:\IronMindKV --kv-disk-space-mb 16384
 ```
 
 Environment variables:
 
 ```text
 IRONMIND_MODEL=qwen3-coder:30b
-IRONMIND_CTX=32768
+IRONMIND_CTX=131072
+IRONMIND_KV_DISK_DIR=C:\IronMindKV
+IRONMIND_KV_DISK_SPACE_MB=16384
 IRONMIND_PORT=4141
 IRONMIND_OLLAMA_URL=http://127.0.0.1:11434
 ```
+
+Use an internal SSD/NVMe for `IRONMIND_KV_DISK_DIR`. A removable SD card is usually too slow for 100k+ token KV-cache restore/write patterns.
 
 Health check:
 
@@ -88,7 +93,7 @@ Planned core milestones:
 
 1. GGUF metadata reader for the selected target model. Implemented as `ironmind inspect` and native `ironmind-inspect`.
 2. Qwen3 prompt rendering tests. Implemented in `lib/qwen3Prompt.mjs`.
-3. Disk KV-cache container. Implemented as IronKV v1 metadata/payload format.
+3. Disk context store for 100k+ token sessions. Implemented as prompt-prefix snapshots today, native KV payload next.
 4. Tokenizer compatibility.
 5. Quantized CPU matmul kernels for AVX2/AVX512.
 6. Attention, RoPE, and KV-cache snapshots in RAM.

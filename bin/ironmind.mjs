@@ -6,6 +6,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { inspectGguf, summarizeGguf } from "../lib/gguf.mjs";
 import { validateIronMindTarget } from "../lib/target.mjs";
+import { contextStoreStats, defaultContextDir, saveContextSnapshot } from "../lib/contextStore.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
@@ -16,7 +17,9 @@ const defaults = {
   host: "127.0.0.1",
   port: 4141,
   model: "qwen3-coder:30b",
-  ctx: 32768,
+  ctx: 131072,
+  kvDiskDir: defaultContextDir(),
+  kvDiskSpaceMb: 16384,
   ollamaUrl: "http://127.0.0.1:11434"
 };
 
@@ -24,11 +27,13 @@ function readUserConfig() {
   try {
     const raw = fs.readFileSync(configPath, "utf8");
     const parsed = JSON.parse(raw);
-    return {
-      model: parsed.model,
-      ctx: parsed.context,
-      ollamaUrl: parsed.ollamaUrl
-    };
+    const config = {};
+    if (parsed.model) config.model = parsed.model;
+    if (parsed.context) config.ctx = parsed.context;
+    if (parsed.kvDiskDir) config.kvDiskDir = parsed.kvDiskDir;
+    if (parsed.kvDiskSpaceMb) config.kvDiskSpaceMb = parsed.kvDiskSpaceMb;
+    if (parsed.ollamaUrl) config.ollamaUrl = parsed.ollamaUrl;
+    return config;
   } catch {
     return {};
   }
@@ -46,6 +51,8 @@ function parseArgs(argv) {
     else if (arg === "--port" && next) config.port = Number(next), i += 1;
     else if (arg === "--model" && next) config.model = next, i += 1;
     else if (arg === "--ctx" && next) config.ctx = Number(next), i += 1;
+    else if (arg === "--kv-disk-dir" && next) config.kvDiskDir = path.resolve(next), i += 1;
+    else if (arg === "--kv-disk-space-mb" && next) config.kvDiskSpaceMb = Number(next), i += 1;
     else if (arg === "--ollama" && next) config.ollamaUrl = next, i += 1;
     else if (arg === "--help" || arg === "-h") return { command: "help", config };
   }
@@ -54,6 +61,8 @@ function parseArgs(argv) {
   config.port = Number(process.env.IRONMIND_PORT || config.port);
   config.model = process.env.IRONMIND_MODEL || config.model;
   config.ctx = Number(process.env.IRONMIND_CTX || config.ctx);
+  config.kvDiskDir = path.resolve(process.env.IRONMIND_KV_DISK_DIR || config.kvDiskDir);
+  config.kvDiskSpaceMb = Number(process.env.IRONMIND_KV_DISK_SPACE_MB || config.kvDiskSpaceMb);
   config.ollamaUrl = process.env.IRONMIND_OLLAMA_URL || config.ollamaUrl;
   config.ollamaUrl = config.ollamaUrl.replace(/\/+$/, "");
   return { command, config };
@@ -63,13 +72,16 @@ function usage() {
   console.log(`IronMind
 
 Usage:
-  ironmind [serve] [--host 127.0.0.1] [--port 4141] [--model qwen3-coder:30b] [--ctx 32768]
+  ironmind [serve] [--host 127.0.0.1] [--port 4141] [--model qwen3-coder:30b] [--ctx 131072]
+           [--kv-disk-dir ~/.ironmind/kvcache] [--kv-disk-space-mb 16384]
   ironmind doctor
   ironmind inspect <model.gguf>
 
 Environment:
   IRONMIND_MODEL
   IRONMIND_CTX
+  IRONMIND_KV_DISK_DIR
+  IRONMIND_KV_DISK_SPACE_MB
   IRONMIND_PORT
   IRONMIND_OLLAMA_URL
 `);
@@ -207,6 +219,7 @@ function chunkText(chunk) {
 async function handleUiChat(req, res, config) {
   try {
     const body = await readJson(req);
+    const contextSnapshot = await saveContextSnapshot(config, body);
     const response = await ollamaChat(config, body, true);
     res.writeHead(200, {
       "content-type": "application/x-ndjson; charset=utf-8",
@@ -221,7 +234,8 @@ async function handleUiChat(req, res, config) {
           type: "done",
           model: chunk.model,
           promptEvalCount: chunk.prompt_eval_count,
-          evalCount: chunk.eval_count
+          evalCount: chunk.eval_count,
+          contextSnapshot
         }) + "\n");
       }
     });
@@ -235,6 +249,7 @@ async function handleOpenAiChat(req, res, config) {
   try {
     const body = await readJson(req);
     const model = body.model || config.model;
+    const contextSnapshot = await saveContextSnapshot(config, body);
 
     if (body.stream === false) {
       const response = await ollamaChat(config, body, false);
@@ -258,7 +273,8 @@ async function handleOpenAiChat(req, res, config) {
           prompt_tokens: out.prompt_eval_count || 0,
           completion_tokens: out.eval_count || 0,
           total_tokens: (out.prompt_eval_count || 0) + (out.eval_count || 0)
-        }
+        },
+        ironmind: { contextSnapshot }
       });
     }
 
@@ -273,7 +289,11 @@ async function handleOpenAiChat(req, res, config) {
     await eachNdjson(response, async (chunk) => {
       const content = chunkText(chunk);
       if (content) res.write(`data: ${JSON.stringify(openAiChunk(id, model, content))}\n\n`);
-      if (chunk.done) res.write(`data: ${JSON.stringify(openAiChunk(id, model, "", "stop"))}\n\n`);
+      if (chunk.done) {
+        const done = openAiChunk(id, model, "", "stop");
+        done.ironmind = { contextSnapshot };
+        res.write(`data: ${JSON.stringify(done)}\n\n`);
+      }
     });
     res.write("data: [DONE]\n\n");
     res.end();
@@ -305,7 +325,10 @@ function createServer(config) {
         ok: true,
         model: config.model,
         context: config.ctx,
-        backend: config.ollamaUrl
+        backend: config.ollamaUrl,
+        kvDiskDir: config.kvDiskDir,
+        kvDiskSpaceMb: config.kvDiskSpaceMb,
+        contextStore: await contextStoreStats(config)
       });
     }
 
@@ -330,6 +353,8 @@ async function doctor(config) {
   console.log("IronMind doctor");
   console.log(`  model:   ${config.model}`);
   console.log(`  context: ${config.ctx}`);
+  console.log(`  kv disk: ${config.kvDiskDir}`);
+  console.log(`  kv cap:  ${config.kvDiskSpaceMb} MB`);
   console.log(`  ollama:  ${config.ollamaUrl}`);
 
   try {

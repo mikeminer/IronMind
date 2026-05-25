@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { renderQwen3Chat } from "../lib/qwen3Prompt.mjs";
 import { writeIronKv, readIronKv } from "../lib/ironkv.mjs";
+import { saveContextSnapshot, contextStoreStats } from "../lib/contextStore.mjs";
 
 const prompt = renderQwen3Chat([
   { role: "system", content: "You are IronMind." },
@@ -25,6 +26,24 @@ const kv = await readIronKv(kvPath);
 assert.equal(kv.header.modelFingerprint, "abc");
 assert.equal(kv.header.tokenCount, 3);
 assert.equal(kv.payloadLength, 4);
+
+const context = await saveContextSnapshot({
+  model: "qwen3-coder:30b",
+  ctx: 131072,
+  kvDiskDir: path.join(dir, "kvcache"),
+  kvDiskSpaceMb: 16
+}, {
+  messages: [{ role: "user", content: "Persist this prefix." }],
+  think: false
+});
+assert.equal(context.nativeKvPayload, false);
+assert.ok(context.estimatedTokens > 0);
+
+const stats = await contextStoreStats({
+  kvDiskDir: path.join(dir, "kvcache"),
+  kvDiskSpaceMb: 16
+});
+assert.equal(stats.files, 1);
 
 await fs.rm(dir, { recursive: true, force: true });
 console.log("foundation tests passed");

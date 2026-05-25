@@ -6,6 +6,7 @@ const clearEl = document.querySelector("#clear");
 const statusEl = document.querySelector("#status");
 const modelEl = document.querySelector("#model");
 const ctxEl = document.querySelector("#ctx");
+const kvDiskEl = document.querySelector("#kvDisk");
 const thinkEl = document.querySelector("#think");
 
 const messages = [
@@ -94,7 +95,9 @@ async function sendPrompt(text) {
         render();
       }
       if (event.type === "done") {
-        setStatus(`Done. prompt=${event.promptEvalCount || 0}, output=${event.evalCount || 0}`);
+        const snapshot = event.contextSnapshot;
+        const cached = snapshot ? `, disk=${snapshot.estimatedTokens}t` : "";
+        setStatus(`Done. prompt=${event.promptEvalCount || 0}, output=${event.evalCount || 0}${cached}`);
       }
     });
   } catch (error) {
@@ -136,7 +139,9 @@ async function loadHealth() {
     const health = await response.json();
     modelEl.value = health.model;
     ctxEl.value = health.context;
-    setStatus(`Backend: ${health.backend}`);
+    kvDiskEl.value = health.kvDiskDir;
+    const files = health.contextStore?.files || 0;
+    setStatus(`Backend: ${health.backend}; disk context files=${files}`);
   } catch {
     setStatus("Health check failed", true);
   }

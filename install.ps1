@@ -76,7 +76,9 @@ if (-not (Test-Path $ConfigPath)) {
     $Config = @"
 {
   "model": "qwen3-coder:30b",
-  "context": 32768,
+  "context": 131072,
+  "kvDiskDir": "$($UserRoot.Replace('\', '\\'))\\kvcache",
+  "kvDiskSpaceMb": 16384,
   "ollamaUrl": "http://127.0.0.1:11434"
 }
 "@

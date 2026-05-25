@@ -20,6 +20,7 @@ During pre-alpha, layer 6 is represented by an Ollama/llama.cpp-compatible local
 - Qwen3/Qwen3MoE target validator: `lib/target.mjs`.
 - Qwen3 chat/tool prompt renderer: `lib/qwen3Prompt.mjs`.
 - IronKV disk-cache container: `lib/ironkv.mjs`.
+- Persistent disk context snapshots: `lib/contextStore.mjs`.
 
 These are not the final inference core yet. They are the first model-specific contracts the native engine must obey.
 
@@ -27,6 +28,12 @@ These are not the final inference core yet. They are the first model-specific co
 
 The first native target should be a single GGUF quantization of a practical model for 64GB RAM machines.
 The current candidate is Qwen3-Coder 30B A3B.
+
+The context target is at least 131072 tokens. On 64GB RAM machines, IronMind treats disk as a first-class context tier:
+
+- RAM holds the active decode window and hottest KV pages.
+- Disk holds reusable prompt prefixes and, in the native backend, serialized KV payloads.
+- The recommended storage is internal SSD/NVMe. Removable SD storage is acceptable only for cold archives, not active KV restore/write.
 
 The native core should prioritize:
 
@@ -47,7 +54,7 @@ The native core should prioritize:
 6. Add MoE router and expert dispatch for Qwen3MoE.
 7. Add AVX2 baseline quantized matmul.
 8. Add AVX512/VNNI kernels where available.
-9. Save RAM KV state into IronKV and restore it across process restarts.
+9. Save RAM KV state into IronKV and restore it across process restarts for 100k+ token sessions.
 10. Add logit/token-vector regression tests.
 
 ## API Surface

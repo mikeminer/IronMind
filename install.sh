@@ -61,7 +61,9 @@ if [ ! -f "$HOME/.ironmind/ironmind.json" ]; then
   cat > "$HOME/.ironmind/ironmind.json" <<EOF
 {
   "model": "qwen3-coder:30b",
-  "context": 32768,
+  "context": 131072,
+  "kvDiskDir": "$HOME/.ironmind/kvcache",
+  "kvDiskSpaceMb": 16384,
   "ollamaUrl": "http://127.0.0.1:11434"
 }
 EOF
