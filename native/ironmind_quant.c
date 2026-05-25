@@ -258,6 +258,73 @@ static void dequant_q6_k(float * out, const uint8_t * row, size_t cols) {
     }
 }
 
+static float dot_q4_k(const uint8_t * row, const float * vector, size_t cols) {
+    const size_t blocks = cols / 256u;
+    float sum = 0.0f;
+    for (size_t block = 0; block < blocks; block++) {
+        const uint8_t * p = row + block * 144u;
+        const float d = im_f16_to_f32(read_le16(p));
+        const float min = im_f16_to_f32(read_le16(p + 2));
+        const uint8_t * scales = p + 4;
+        const uint8_t * q = p + 16;
+        const size_t base = block * 256u;
+        int is = 0;
+        for (int j = 0; j < 256; j += 64) {
+            uint8_t sc = 0;
+            uint8_t m = 0;
+            get_scale_min_k4(is + 0, scales, &sc, &m);
+            const float d1 = d * (float)sc;
+            const float m1 = min * (float)m;
+            get_scale_min_k4(is + 1, scales, &sc, &m);
+            const float d2 = d * (float)sc;
+            const float m2 = min * (float)m;
+            const size_t off = base + (size_t)j;
+            for (int l = 0; l < 32; l++) {
+                sum += (d1 * (float)(q[l] & 0x0f) - m1) * vector[off + (size_t)l];
+                sum += (d2 * (float)(q[l] >> 4) - m2) * vector[off + 32u + (size_t)l];
+            }
+            q += 32;
+            is += 2;
+        }
+    }
+    return sum;
+}
+
+static float dot_q6_k(const uint8_t * row, const float * vector, size_t cols) {
+    const size_t blocks = cols / 256u;
+    float sum = 0.0f;
+    for (size_t block = 0; block < blocks; block++) {
+        const uint8_t * p = row + block * 210u;
+        const uint8_t * ql = p;
+        const uint8_t * qh = p + 128;
+        const int8_t * sc = (const int8_t *)(p + 192);
+        const float d = im_f16_to_f32(read_le16(p + 208));
+        const size_t base = block * 256u;
+        for (int n = 0; n < 256; n += 128) {
+            for (int l = 0; l < 32; l++) {
+                const int is = l / 16;
+                const int8_t q1 = (int8_t)((ql[l + 0] & 0x0f) | (((qh[l] >> 0) & 3) << 4)) - 32;
+                const int8_t q2 = (int8_t)((ql[l + 32] & 0x0f) | (((qh[l] >> 2) & 3) << 4)) - 32;
+                const int8_t q3 = (int8_t)((ql[l + 0] >> 4) | (((qh[l] >> 4) & 3) << 4)) - 32;
+                const int8_t q4 = (int8_t)((ql[l + 32] >> 4) | (((qh[l] >> 6) & 3) << 4)) - 32;
+                const size_t off = base + (size_t)n + (size_t)l;
+                sum += d * (float)sc[is + 0] * (float)q1 * vector[off + 0u];
+                sum += d * (float)sc[is + 2] * (float)q2 * vector[off + 32u];
+                sum += d * (float)sc[is + 4] * (float)q3 * vector[off + 64u];
+                sum += d * (float)sc[is + 6] * (float)q4 * vector[off + 96u];
+            }
+            ql += 64;
+            qh += 32;
+            sc += 8;
+        }
+    }
+    return sum;
+}
+
+int im_quant_has_direct_dot(int32_t type) {
+    return type == IM_GGML_TYPE_Q4_K || type == IM_GGML_TYPE_Q6_K;
+}
+
 int im_dequantize_row(float * out, const void * row, int32_t type, size_t cols) {
     if (!out || !row) return -1;
     const uint8_t * bytes = (const uint8_t *)row;
@@ -292,9 +359,18 @@ int im_quant_matvec(float * out, const void * matrix, int32_t type, size_t rows,
     if (!out || !matrix || !vector || rows == 0 || cols == 0) return -1;
     const size_t row_bytes = im_quant_row_size(type, cols);
     if (row_bytes == 0) return -1;
+    const uint8_t * base = (const uint8_t *)matrix;
+    if (im_quant_has_direct_dot(type)) {
+        const im_quant_type_info * info = im_quant_type_info_for(type);
+        if (!info || cols % info->block_size != 0) return -1;
+        for (size_t r = 0; r < rows; r++) {
+            const uint8_t * row = base + r * row_bytes;
+            out[r] = type == IM_GGML_TYPE_Q4_K ? dot_q4_k(row, vector, cols) : dot_q6_k(row, vector, cols);
+        }
+        return 0;
+    }
     float * row = (float *)malloc(cols * sizeof(float));
     if (!row) return -1;
-    const uint8_t * base = (const uint8_t *)matrix;
     for (size_t r = 0; r < rows; r++) {
         if (im_dequantize_row(row, base + r * row_bytes, type, cols) != 0) {
             free(row);

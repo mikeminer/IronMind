@@ -51,6 +51,9 @@ int main(void) {
     expect(im_quant_row_size(IM_GGML_TYPE_Q4_K, 256) == 144, "q4_k row bytes");
     expect(im_quant_row_size(IM_GGML_TYPE_Q6_K, 256) == 210, "q6_k row bytes");
     expect(im_quant_type_info_for(IM_GGML_TYPE_Q4_K)->matvec_supported, "q4_k supported");
+    expect(im_quant_has_direct_dot(IM_GGML_TYPE_Q4_K), "q4_k direct dot");
+    expect(im_quant_has_direct_dot(IM_GGML_TYPE_Q6_K), "q6_k direct dot");
+    expect(!im_quant_has_direct_dot(IM_GGML_TYPE_Q8_0), "q8 uses dequant buffer");
 
     uint8_t q4k[144];
     memset(q4k, 0, sizeof(q4k));
@@ -63,6 +66,14 @@ int main(void) {
     expect(im_dequantize_row(krow, q4k, IM_GGML_TYPE_Q4_K, 256) == 0, "q4_k dequant");
     expect(closef_local(krow[0], 1.0f, 1e-6f), "q4_k first scale");
     expect(closef_local(krow[32], 2.0f, 1e-6f), "q4_k second scale");
+    float kvec[256];
+    float expected = 0.0f;
+    for (int i = 0; i < 256; i++) {
+        kvec[i] = (float)((i % 11) - 5) * 0.125f;
+        expected += krow[i] * kvec[i];
+    }
+    expect(im_quant_matvec(out, q4k, IM_GGML_TYPE_Q4_K, 1, 256, kvec) == 0, "q4_k direct matvec");
+    expect(closef_local(out[0], expected, 1e-4f), "q4_k direct sum");
 
     uint8_t q6k[210];
     memset(q6k, 0, sizeof(q6k));
@@ -73,6 +84,13 @@ int main(void) {
     expect(im_dequantize_row(krow, q6k, IM_GGML_TYPE_Q6_K, 256) == 0, "q6_k dequant");
     expect(closef_local(krow[0], 0.0f, 1e-6f), "q6_k zero point");
     expect(closef_local(krow[255], 0.0f, 1e-6f), "q6_k zero point tail");
+    expected = 0.0f;
+    for (int i = 0; i < 256; i++) {
+        kvec[i] = (float)((i % 13) - 6) * 0.0625f;
+        expected += krow[i] * kvec[i];
+    }
+    expect(im_quant_matvec(out, q6k, IM_GGML_TYPE_Q6_K, 1, 256, kvec) == 0, "q6_k direct matvec");
+    expect(closef_local(out[0], expected, 1e-4f), "q6_k direct sum");
 
     puts("native quant tests passed");
     return 0;

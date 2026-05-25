@@ -16,7 +16,7 @@ The native implementation should stay model-specific. The first target is Qwen3-
 1. `ironmind_inspect.c`: parse GGUF metadata and tensor directory without loading weights.
 2. `tokenizer_qwen3.c`: load tokenizer metadata and reproduce Qwen3 token IDs.
 3. `ironmind_gguf.c`: load GGUF metadata, tensor directory, offsets, sizes, and tensor payloads.
-4. `ironmind_quant.c`: scalar GGUF row dequantization and matvec for F32/F16/BF16/Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/Q4_K/Q6_K.
+4. `ironmind_quant.c`: GGUF matvec for F32/F16/BF16/Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/Q4_K/Q6_K, with direct quantized dot for Q4_K/Q6_K.
 5. `ironmind_simd*.c`: runtime scalar/AVX2/AVX512F dot dispatch used by matvec and attention.
 6. `ironmind_math.c`: scalar RMSNorm, RoPE, softmax, attention kernels.
 7. `ironmind_forward.c`: native dense decode step with RAM KV cache and save/restore.
@@ -48,6 +48,6 @@ IRONMIND_NATIVE_CACHE_MAX_TENSOR_MB=64
 
 `ironmind_qwen3_test.c` writes a tiny Qwen3 GGUF fixture, decodes it through the GGUF-backed path, and compares logits plus argmax token against the F32 reference forward path.
 
-The next step is direct quantized dot kernels for Q4_K/Q6_K and server-side native session integration.
+The next step is server-side native session integration and deeper SIMD inside the direct Q4_K/Q6_K kernels.
 
 The rule is simple: if a model does not match the selected target contract, the native backend should refuse it early.

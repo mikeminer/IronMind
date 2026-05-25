@@ -76,7 +76,7 @@ The default budget is `IRONMIND_NATIVE_CACHE_MB=512` with `IRONMIND_NATIVE_CACHE
 7. Add scalar quantized matmul. Implemented for common GGUF CPU formats including Q4_K and Q6_K.
 8. Wire GGUF tensor views into the native forward pass and emit real logits. Dense and MoE Qwen3 wiring is in place.
 9. Add logit/token-vector regression tests. A tiny GGUF fixture compares GGUF-backed logits/token argmax against the F32 reference path.
-10. Add AVX2 and AVX512 kernels where available. Runtime AVX2/AVX512F dot dispatch is in place; direct quantized dot kernels are next.
+10. Add AVX2 and AVX512 kernels where available. Runtime AVX2/AVX512F dot dispatch is in place; Q4_K/Q6_K now use direct quantized dot instead of materializing a full F32 row.
 11. Save RAM KV state into IronKV and restore it across process restarts for 100k+ token sessions.
 
 ## API Surface

@@ -41,4 +41,5 @@ size_t im_quant_tensor_size(int32_t type, const uint64_t * dims, uint32_t n_dims
 float im_f16_to_f32(uint16_t h);
 float im_bf16_to_f32(uint16_t h);
 int im_dequantize_row(float * out, const void * row, int32_t type, size_t cols);
+int im_quant_has_direct_dot(int32_t type);
 int im_quant_matvec(float * out, const void * matrix, int32_t type, size_t rows, size_t cols, const float * vector);

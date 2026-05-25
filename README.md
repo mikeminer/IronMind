@@ -118,7 +118,7 @@ Planned core milestones:
 6. Scalar RMSNorm, RoPE, softmax, and attention kernels. Implemented in JS and native C.
 7. Native dense decode step with RAM KV cache save/restore. Implemented in `native/ironmind_forward.c`.
 8. Native GGUF tensor loader and runtime gate. Implemented in `native/ironmind_gguf.c` and `ironmind native`.
-9. Quantized CPU matmul scalar baseline plus SIMD dot dispatch. Implemented for F32/F16/BF16/Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/Q4_K/Q6_K in `native/ironmind_quant.c`; AVX2/AVX512F dot kernels are in `native/ironmind_simd*.c`.
+9. Quantized CPU matmul scalar baseline plus SIMD dot dispatch. Implemented for F32/F16/BF16/Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/Q4_K/Q6_K in `native/ironmind_quant.c`; Q4_K/Q6_K use direct quantized dot without a full F32 row buffer, and AVX2/AVX512F dot kernels are in `native/ironmind_simd*.c`.
 10. MoE top-k routing and expert mixing primitive. Implemented in `native/ironmind_moe.c`.
 11. GGUF-backed Qwen3 decode wiring. Implemented in `native/ironmind_qwen3.c`.
 12. Logit/token reference comparison. Implemented in `native/ironmind_qwen3_test.c`.
