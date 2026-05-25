@@ -81,7 +81,7 @@ Usage:
   ironmind inspect <model.gguf>
   ironmind tokenize <model.gguf> <text>
   ironmind map <model.gguf>
-  ironmind native <model.gguf>
+  ironmind native <model.gguf> [--decode TOKEN] [--ctx N]
 
 Environment:
   IRONMIND_MODEL
@@ -424,9 +424,10 @@ async function mapModel(filePath) {
   if (map.missing.length > 20) console.log(`  missing          ... ${map.missing.length - 20} more`);
 }
 
-function nativeModel(filePath) {
+function nativeModel(args) {
+  const filePath = args[0];
   if (!filePath) {
-    console.error("usage: ironmind native <model.gguf>");
+    console.error("usage: ironmind native <model.gguf> [--decode TOKEN] [--ctx N]");
     process.exitCode = 2;
     return;
   }
@@ -438,7 +439,7 @@ function nativeModel(filePath) {
     process.exitCode = 1;
     return;
   }
-  const result = spawnSync(exe, [path.resolve(filePath)], { stdio: "inherit" });
+  const result = spawnSync(exe, [path.resolve(filePath), ...args.slice(1)], { stdio: "inherit" });
   process.exitCode = result.status ?? 1;
 }
 
@@ -450,7 +451,7 @@ async function main() {
   if (command === "inspect") return inspectModel(process.argv.slice(3)[0]);
   if (command === "tokenize") return tokenizeModel(process.argv.slice(3));
   if (command === "map") return mapModel(process.argv.slice(3)[0]);
-  if (command === "native") return nativeModel(process.argv.slice(3)[0]);
+  if (command === "native") return nativeModel(process.argv.slice(3));
   if (command !== "serve") return usage();
 
   const server = createServer(config);

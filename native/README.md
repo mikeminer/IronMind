@@ -21,21 +21,25 @@ The native implementation should stay model-specific. The first target is Qwen3-
 6. `ironmind_math.c`: scalar RMSNorm, RoPE, softmax, attention kernels. AVX paths come next.
 7. `ironmind_forward.c`: native dense decode step with RAM KV cache and save/restore.
 8. `ironmind_moe.c`: router top-k and expert mixing for Qwen3MoE.
-9. `kv_cache.c`: RAM KV state and IronKV save/restore.
-10. `eval_vectors.c`: logit/token regression runner.
-11. `ironmind_native.c`: native GGUF readiness gate for a real model file.
+9. `ironmind_qwen3.c`: GGUF-backed dense/MoE Qwen3 decode path.
+10. `kv_cache.c`: RAM KV state and IronKV save/restore.
+11. `eval_vectors.c`: logit/token regression runner.
+12. `ironmind_native.c`: native GGUF readiness/decode gate for a real model file.
 
 `ironmind_forward.c` currently runs an F32 Qwen-like dense decode path and proves the native KV lifecycle:
 token -> QKV -> q/k norm -> RoPE -> causal attention over RAM KV -> FFN -> logits, then save/load KV and continue.
-`ironmind_gguf.c` and `ironmind_quant.c` now provide the GGUF-backed weight views and scalar quantized matvec path needed for that replacement.
+`ironmind_qwen3.c` uses `ironmind_gguf.c` and `ironmind_quant.c` to run the same decode against GGUF tensor views without dequantizing the whole model into RAM.
 
 Run:
 
 ```powershell
 npm run native:test
 .\build\Release\ironmind-native.exe C:\path\to\model.gguf
+.\build\Release\ironmind-native.exe C:\path\to\model.gguf --decode 0 --ctx 1
 ```
 
-The next step is wiring the GGUF tensor views directly into `im_forward_decode`, then adding token/logit reference vectors for the selected quant.
+`ironmind_qwen3_test.c` writes a tiny Qwen3 GGUF fixture, decodes it through the GGUF-backed path, and compares logits plus argmax token against the F32 reference forward path.
+
+The next step is performance: AVX2/AVX512 matvec kernels, tensor residency strategy, and then server-side native session integration.
 
 The rule is simple: if a model does not match the selected target contract, the native backend should refuse it early.

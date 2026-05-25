@@ -24,12 +24,13 @@ During pre-alpha, layer 6 is represented by an Ollama/llama.cpp-compatible local
 - Native GGUF tensor loader and tensor data reader: `native/ironmind_gguf.c`.
 - Native quantized row/matvec scalar kernels: `native/ironmind_quant.c`.
 - Native MoE router and expert mixer: `native/ironmind_moe.c`.
+- GGUF-backed Qwen3 decode wiring: `native/ironmind_qwen3.c`.
 - RMSNorm, RoPE, softmax, and attention reference kernels: `lib/mathCore.mjs` and `native/ironmind_math.c`.
 - Native F32 dense decode step with RAM KV save/restore: `native/ironmind_forward.c`.
 - IronKV disk-cache container: `lib/ironkv.mjs`.
 - Persistent disk context snapshots: `lib/contextStore.mjs`.
 
-The native pieces now load real GGUF tensor views, validate supported quantized matvec formats, route MoE experts, and prove a KV-backed decode step. The remaining bridge is GGUF-backed forward wiring that replaces the F32 fixture matrices with live tensor reads and then validates logits against references.
+The native pieces now load real GGUF tensor views, validate supported quantized matvec formats, route MoE experts, decode through GGUF-backed Qwen3 tensors, and compare logits/token argmax against the F32 reference path.
 
 ## Native CPU Target
 
@@ -60,10 +61,10 @@ The native core should prioritize:
 5. Implement RMSNorm, RoPE, attention, and dense FFN path. Native F32 decode step is in place.
 6. Add MoE router and expert dispatch for Qwen3MoE. Scalar top-k routing and expert mixing are in place.
 7. Add scalar quantized matmul. Implemented for common GGUF CPU formats including Q4_K and Q6_K.
-8. Add AVX2 and AVX512/VNNI kernels where available.
-9. Wire GGUF tensor views into the native forward pass and emit real logits.
-10. Save RAM KV state into IronKV and restore it across process restarts for 100k+ token sessions.
-11. Add logit/token-vector regression tests.
+8. Wire GGUF tensor views into the native forward pass and emit real logits. Dense and MoE Qwen3 wiring is in place.
+9. Add logit/token-vector regression tests. A tiny GGUF fixture compares GGUF-backed logits/token argmax against the F32 reference path.
+10. Add AVX2 and AVX512/VNNI kernels where available.
+11. Save RAM KV state into IronKV and restore it across process restarts for 100k+ token sessions.
 
 ## API Surface
 

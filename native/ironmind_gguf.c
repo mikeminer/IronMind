@@ -358,6 +358,105 @@ int im_gguf_read_tensor_data(const im_gguf_file * file, const im_gguf_tensor * t
     return ok ? 0 : -1;
 }
 
+uint64_t im_gguf_tensor_cols(const im_gguf_tensor * tensor) {
+    if (!tensor || tensor->n_dims == 0) return 0;
+    return tensor->dims[0];
+}
+
+uint64_t im_gguf_tensor_rows(const im_gguf_tensor * tensor) {
+    if (!tensor || tensor->n_dims == 0) return 0;
+    uint64_t rows = 1;
+    for (uint32_t i = 1; i < tensor->n_dims; i++) {
+        if (tensor->dims[i] && rows > UINT64_MAX / tensor->dims[i]) return 0;
+        rows *= tensor->dims[i];
+    }
+    return rows;
+}
+
+static int read_tensor_row_f32_from_file(FILE * f, const im_gguf_tensor * tensor, uint64_t row, float * out, size_t cols) {
+    if (!f || !tensor || !out || cols == 0 || cols != (size_t)im_gguf_tensor_cols(tensor) || row >= im_gguf_tensor_rows(tensor)) return -1;
+    const size_t row_bytes = im_quant_row_size(tensor->type, cols);
+    if (row_bytes == 0 || row > (UINT64_MAX - tensor->absolute_offset) / row_bytes) return -1;
+    uint8_t * data = (uint8_t *)malloc(row_bytes);
+    if (!data) return -1;
+    const uint64_t off = tensor->absolute_offset + row * (uint64_t)row_bytes;
+    const int ok = IM_FSEEK(f, (int64_t)off, SEEK_SET) == 0 &&
+                   fread(data, 1, row_bytes, f) == row_bytes &&
+                   im_dequantize_row(out, data, tensor->type, cols) == 0;
+    free(data);
+    return ok ? 0 : -1;
+}
+
+int im_gguf_read_tensor_row_f32(const im_gguf_file * file, const im_gguf_tensor * tensor, uint64_t row, float * out, size_t cols) {
+    if (!file || !tensor || !out) return -1;
+    FILE * f = fopen(file->path, "rb");
+    if (!f) return -1;
+    const int rc = read_tensor_row_f32_from_file(f, tensor, row, out, cols);
+    fclose(f);
+    return rc;
+}
+
+int im_gguf_read_tensor_f32(const im_gguf_file * file, const im_gguf_tensor * tensor, float * out, size_t values) {
+    if (!file || !tensor || !out) return -1;
+    const uint64_t cols = im_gguf_tensor_cols(tensor);
+    const uint64_t rows = im_gguf_tensor_rows(tensor);
+    if (cols == 0 || rows == 0 || values != (size_t)(cols * rows)) return -1;
+    FILE * f = fopen(file->path, "rb");
+    if (!f) return -1;
+    int ok = 1;
+    for (uint64_t row = 0; row < rows; row++) {
+        if (read_tensor_row_f32_from_file(f, tensor, row, out + row * cols, (size_t)cols) != 0) {
+            ok = 0;
+            break;
+        }
+    }
+    fclose(f);
+    return ok ? 0 : -1;
+}
+
+int im_gguf_tensor_matvec(const im_gguf_file * file, const im_gguf_tensor * tensor, uint64_t row_start, uint64_t rows, const float * vector, float * out) {
+    if (!file || !tensor || !vector || !out || rows == 0) return -1;
+    const uint64_t cols64 = im_gguf_tensor_cols(tensor);
+    const uint64_t total_rows = im_gguf_tensor_rows(tensor);
+    if (cols64 == 0 || cols64 > SIZE_MAX || row_start > total_rows || rows > total_rows - row_start) return -1;
+    const size_t cols = (size_t)cols64;
+    const size_t row_bytes = im_quant_row_size(tensor->type, cols);
+    if (row_bytes == 0) return -1;
+
+    FILE * f = fopen(file->path, "rb");
+    if (!f) return -1;
+    uint8_t * data = (uint8_t *)malloc(row_bytes);
+    float * deq = (float *)malloc(cols * sizeof(float));
+    if (!data || !deq) {
+        free(data);
+        free(deq);
+        fclose(f);
+        return -1;
+    }
+
+    int ok = 1;
+    for (uint64_t row = 0; row < rows; row++) {
+        const uint64_t abs_row = row_start + row;
+        if (abs_row > (UINT64_MAX - tensor->absolute_offset) / row_bytes) {
+            ok = 0;
+            break;
+        }
+        const uint64_t off = tensor->absolute_offset + abs_row * (uint64_t)row_bytes;
+        if (IM_FSEEK(f, (int64_t)off, SEEK_SET) != 0 || fread(data, 1, row_bytes, f) != row_bytes || im_dequantize_row(deq, data, tensor->type, cols) != 0) {
+            ok = 0;
+            break;
+        }
+        double sum = 0.0;
+        for (size_t c = 0; c < cols; c++) sum += (double)deq[c] * (double)vector[c];
+        out[row] = (float)sum;
+    }
+
+    free(data);
+    free(deq);
+    fclose(f);
+    return ok ? 0 : -1;
+}
+
 int im_gguf_is_qwen_target(const im_gguf_file * file) {
     if (!file) return 0;
     return strcmp(file->architecture, "qwen3") == 0 || strcmp(file->architecture, "qwen3moe") == 0;

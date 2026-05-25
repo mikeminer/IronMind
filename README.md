@@ -69,6 +69,7 @@ Inspect a GGUF before trying to run it:
 ironmind inspect C:\path\to\model.gguf
 ironmind map C:\path\to\model.gguf
 ironmind native C:\path\to\model.gguf
+ironmind native C:\path\to\model.gguf --decode 0 --ctx 1
 ironmind tokenize C:\path\to\model.gguf "Ciao mondo"
 ```
 
@@ -78,8 +79,11 @@ Build the native core:
 npm run native:build
 .\build\Release\ironmind-inspect.exe C:\path\to\model.gguf
 .\build\Release\ironmind-native.exe C:\path\to\model.gguf
+.\build\Release\ironmind-native.exe C:\path\to\model.gguf --decode 0 --ctx 1
 npm run native:test
 ```
+
+The `--decode` path is scalar and file-backed today. It is for correctness and reference checks first; AVX2/AVX512 kernels and tensor residency come next for speed.
 
 Run the built-in 100-question evaluation suite:
 
@@ -112,10 +116,12 @@ Planned core milestones:
 8. Native GGUF tensor loader and runtime gate. Implemented in `native/ironmind_gguf.c` and `ironmind native`.
 9. Quantized CPU matmul scalar baseline. Implemented for F32/F16/BF16/Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/Q4_K/Q6_K in `native/ironmind_quant.c`; AVX2/AVX512 fast paths are next.
 10. MoE top-k routing and expert mixing primitive. Implemented in `native/ironmind_moe.c`.
-11. Evaluation suite for physics, mathematics, and defensive security. Implemented as IronMind Eval 100.
-12. Native IronKV payload integration for full server sessions.
-13. Native tool-call replay and canonicalization.
-14. Replace the bootstrap runtime path with the IronMind CPU backend once GGUF-backed forward wiring emits verified tokens.
+11. GGUF-backed Qwen3 decode wiring. Implemented in `native/ironmind_qwen3.c`.
+12. Logit/token reference comparison. Implemented in `native/ironmind_qwen3_test.c`.
+13. Evaluation suite for physics, mathematics, and defensive security. Implemented as IronMind Eval 100.
+14. Native IronKV payload integration for full server sessions.
+15. Native tool-call replay and canonicalization.
+16. Replace the bootstrap runtime path with the IronMind CPU backend once scalar correctness is fast enough for interactive use.
 
 ## License
 
