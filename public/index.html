@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>IronMind</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="panel">
+        <div class="brand">
+          <div class="mark">IM</div>
+          <div>
+            <h1>IronMind</h1>
+            <p>CPU/RAM local inference</p>
+          </div>
+        </div>
+
+        <label>
+          Model
+          <input id="model" value="qwen3-coder:30b" autocomplete="off">
+        </label>
+
+        <label>
+          Context
+          <input id="ctx" type="number" min="2048" step="2048" value="32768">
+        </label>
+
+        <label class="check">
+          <input id="think" type="checkbox">
+          <span>Thinking</span>
+        </label>
+
+        <div class="status" id="status">Ready</div>
+        <button id="clear" type="button">Clear chat</button>
+      </aside>
+
+      <section class="chat">
+        <div id="messages" class="messages"></div>
+        <form id="composer" class="composer">
+          <textarea id="prompt" rows="3" placeholder="Ask IronMind..." autofocus></textarea>
+          <button id="send" type="submit">Send</button>
+        </form>
+      </section>
+    </main>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
