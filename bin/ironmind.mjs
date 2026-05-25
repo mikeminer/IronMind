@@ -3,6 +3,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { inspectGguf, summarizeGguf } from "../lib/gguf.mjs";
 import { validateIronMindTarget } from "../lib/target.mjs";
@@ -80,6 +81,7 @@ Usage:
   ironmind inspect <model.gguf>
   ironmind tokenize <model.gguf> <text>
   ironmind map <model.gguf>
+  ironmind native <model.gguf>
 
 Environment:
   IRONMIND_MODEL
@@ -422,6 +424,24 @@ async function mapModel(filePath) {
   if (map.missing.length > 20) console.log(`  missing          ... ${map.missing.length - 20} more`);
 }
 
+function nativeModel(filePath) {
+  if (!filePath) {
+    console.error("usage: ironmind native <model.gguf>");
+    process.exitCode = 2;
+    return;
+  }
+  const exe = process.platform === "win32"
+    ? path.join(rootDir, "build", "Release", "ironmind-native.exe")
+    : path.join(rootDir, "build", "ironmind-native");
+  if (!fs.existsSync(exe)) {
+    console.error("native runner not built; run `npm run native:build` first");
+    process.exitCode = 1;
+    return;
+  }
+  const result = spawnSync(exe, [path.resolve(filePath)], { stdio: "inherit" });
+  process.exitCode = result.status ?? 1;
+}
+
 async function main() {
   const { command, config } = parseArgs(process.argv.slice(2));
 
@@ -430,6 +450,7 @@ async function main() {
   if (command === "inspect") return inspectModel(process.argv.slice(3)[0]);
   if (command === "tokenize") return tokenizeModel(process.argv.slice(3));
   if (command === "map") return mapModel(process.argv.slice(3)[0]);
+  if (command === "native") return nativeModel(process.argv.slice(3)[0]);
   if (command !== "serve") return usage();
 
   const server = createServer(config);
