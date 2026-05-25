@@ -2,6 +2,7 @@
 
 #include "ironmind_math.h"
 #include "ironmind_moe.h"
+#include "ironmind_simd.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -21,9 +22,7 @@ static size_t kv_offset(const im_forward_config * cfg, uint32_t layer, uint32_t 
 }
 
 static float dot_local(const float * a, const float * b, size_t n) {
-    float out = 0.0f;
-    for (size_t i = 0; i < n; i++) out += a[i] * b[i];
-    return out;
+    return im_dot_f32(a, b, n);
 }
 
 static float silu_local(float x) {
@@ -44,6 +43,18 @@ static const im_gguf_tensor * require_layer_tensor(const im_gguf_file * gguf, ui
     char name[128];
     snprintf(name, sizeof(name), "blk.%u.%s", layer, suffix);
     return require_tensor(gguf, name);
+}
+
+static uint64_t env_mb(const char * name, uint64_t fallback) {
+    const char * value = getenv(name);
+    if (!value || !*value) return fallback;
+    char * end = NULL;
+    const unsigned long long parsed = strtoull(value, &end, 10);
+    return end && *end == '\0' ? (uint64_t)parsed : fallback;
+}
+
+static void pin_if_present(im_qwen3_model * model, const im_gguf_tensor * tensor) {
+    if (tensor) (void)im_gguf_pin_tensor(&model->gguf, tensor);
 }
 
 static int tensor_rows_cols(const im_gguf_tensor * tensor, uint64_t rows, uint64_t cols) {
@@ -110,6 +121,11 @@ int im_qwen3_model_load(im_qwen3_model * model, const char * path, uint32_t max_
         im_qwen3_model_free(model);
         return -1;
     }
+    {
+        const uint64_t cache_mb = env_mb("IRONMIND_NATIVE_CACHE_MB", 512);
+        const uint64_t max_tensor_mb = env_mb("IRONMIND_NATIVE_CACHE_MAX_TENSOR_MB", 64);
+        (void)im_gguf_set_residency(&model->gguf, cache_mb * 1024ull * 1024ull, max_tensor_mb * 1024ull * 1024ull);
+    }
 
     model->is_moe = strcmp(model->gguf.architecture, "qwen3moe") == 0;
     model->token_embedding = require_tensor(&model->gguf, "token_embd.weight");
@@ -153,6 +169,7 @@ int im_qwen3_model_load(im_qwen3_model * model, const char * path, uint32_t max_
         im_qwen3_model_free(model);
         return -1;
     }
+    pin_if_present(model, model->output_norm);
 
     model->layers = (im_qwen3_layer_tensors *)calloc(model->cfg.n_layer, sizeof(*model->layers));
     if (!model->layers) {
@@ -170,6 +187,10 @@ int im_qwen3_model_load(im_qwen3_model * model, const char * path, uint32_t max_
         l->attn_k_norm = require_layer_tensor(&model->gguf, layer, "attn_k_norm.weight");
         l->attn_o = require_layer_tensor(&model->gguf, layer, "attn_output.weight");
         l->ffn_norm = require_layer_tensor(&model->gguf, layer, "ffn_norm.weight");
+        pin_if_present(model, l->attn_norm);
+        pin_if_present(model, l->attn_q_norm);
+        pin_if_present(model, l->attn_k_norm);
+        pin_if_present(model, l->ffn_norm);
         if (model->is_moe) {
             l->moe_gate_inp = require_layer_tensor(&model->gguf, layer, "ffn_gate_inp.weight");
             l->moe_gate_exps = require_layer_tensor(&model->gguf, layer, "ffn_gate_exps.weight");

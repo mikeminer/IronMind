@@ -22,7 +22,9 @@ During pre-alpha, layer 6 is represented by an Ollama/llama.cpp-compatible local
 - Qwen3 GGUF tokenizer loader and BPE tokenizer: `lib/tokenizer.mjs`.
 - Dense Qwen3/Qwen3MoE tensor mapping: `lib/tensorMap.mjs`.
 - Native GGUF tensor loader and tensor data reader: `native/ironmind_gguf.c`.
+- Bounded raw-GGUF tensor residency cache: `native/ironmind_gguf.c`.
 - Native quantized row/matvec scalar kernels: `native/ironmind_quant.c`.
+- Runtime SIMD dot dispatch: `native/ironmind_simd.c`, `native/ironmind_simd_avx2.c`, and `native/ironmind_simd_avx512.c`.
 - Native MoE router and expert mixer: `native/ironmind_moe.c`.
 - GGUF-backed Qwen3 decode wiring: `native/ironmind_qwen3.c`.
 - RMSNorm, RoPE, softmax, and attention reference kernels: `lib/mathCore.mjs` and `native/ironmind_math.c`.
@@ -52,6 +54,17 @@ The native core should prioritize:
 - AVX512/VNNI fast path when available;
 - deterministic prompt rendering tests.
 
+## Native Residency Strategy
+
+IronMind does not dequantize the whole model into RAM. GGUF tensors stay in their raw quantized form. The native backend uses:
+
+- pinned residency for small high-frequency tensors such as RMSNorm and q/k norm vectors;
+- bounded LRU residency for raw quantized tensors that fit under `IRONMIND_NATIVE_CACHE_MAX_TENSOR_MB`;
+- sequential chunked reads for large matrices that should stay file-backed;
+- runtime SIMD dot dispatch, currently scalar/AVX2/AVX512F.
+
+The default budget is `IRONMIND_NATIVE_CACHE_MB=512` with `IRONMIND_NATIVE_CACHE_MAX_TENSOR_MB=64`, which keeps the memory footprint predictable on 64GB machines.
+
 ## Milestone Order
 
 1. Validate the selected GGUF and refuse unknown architectures.
@@ -63,7 +76,7 @@ The native core should prioritize:
 7. Add scalar quantized matmul. Implemented for common GGUF CPU formats including Q4_K and Q6_K.
 8. Wire GGUF tensor views into the native forward pass and emit real logits. Dense and MoE Qwen3 wiring is in place.
 9. Add logit/token-vector regression tests. A tiny GGUF fixture compares GGUF-backed logits/token argmax against the F32 reference path.
-10. Add AVX2 and AVX512/VNNI kernels where available.
+10. Add AVX2 and AVX512 kernels where available. Runtime AVX2/AVX512F dot dispatch is in place; direct quantized dot kernels are next.
 11. Save RAM KV state into IronKV and restore it across process restarts for 100k+ token sessions.
 
 ## API Surface

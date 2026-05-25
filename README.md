@@ -53,9 +53,12 @@ IRONMIND_KV_DISK_DIR=C:\IronMindKV
 IRONMIND_KV_DISK_SPACE_MB=16384
 IRONMIND_PORT=4141
 IRONMIND_OLLAMA_URL=http://127.0.0.1:11434
+IRONMIND_NATIVE_CACHE_MB=512
+IRONMIND_NATIVE_CACHE_MAX_TENSOR_MB=64
 ```
 
 Use an internal SSD/NVMe for `IRONMIND_KV_DISK_DIR`. A removable SD card is usually too slow for 100k+ token KV-cache restore/write patterns.
+The native cache keeps raw quantized GGUF tensors resident under a bounded budget; norm tensors are pinned, while very large matrices stay file-backed and rely on streaming reads plus the OS page cache.
 
 Health check:
 
@@ -83,7 +86,8 @@ npm run native:build
 npm run native:test
 ```
 
-The `--decode` path is scalar and file-backed today. It is for correctness and reference checks first; AVX2/AVX512 kernels and tensor residency come next for speed.
+The `--decode` path is still correctness-first: rows are dequantized into a small work buffer, while dot products use runtime AVX2/AVX512F dispatch and hot tensors use bounded residency.
+`ironmind native` reports the selected SIMD backend and residency stats. On supported x86 CPUs it dispatches to AVX2 or AVX512F at runtime.
 
 Run the built-in 100-question evaluation suite:
 
@@ -114,14 +118,14 @@ Planned core milestones:
 6. Scalar RMSNorm, RoPE, softmax, and attention kernels. Implemented in JS and native C.
 7. Native dense decode step with RAM KV cache save/restore. Implemented in `native/ironmind_forward.c`.
 8. Native GGUF tensor loader and runtime gate. Implemented in `native/ironmind_gguf.c` and `ironmind native`.
-9. Quantized CPU matmul scalar baseline. Implemented for F32/F16/BF16/Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/Q4_K/Q6_K in `native/ironmind_quant.c`; AVX2/AVX512 fast paths are next.
+9. Quantized CPU matmul scalar baseline plus SIMD dot dispatch. Implemented for F32/F16/BF16/Q4_0/Q4_1/Q5_0/Q5_1/Q8_0/Q4_K/Q6_K in `native/ironmind_quant.c`; AVX2/AVX512F dot kernels are in `native/ironmind_simd*.c`.
 10. MoE top-k routing and expert mixing primitive. Implemented in `native/ironmind_moe.c`.
 11. GGUF-backed Qwen3 decode wiring. Implemented in `native/ironmind_qwen3.c`.
 12. Logit/token reference comparison. Implemented in `native/ironmind_qwen3_test.c`.
 13. Evaluation suite for physics, mathematics, and defensive security. Implemented as IronMind Eval 100.
 14. Native IronKV payload integration for full server sessions.
 15. Native tool-call replay and canonicalization.
-16. Replace the bootstrap runtime path with the IronMind CPU backend once scalar correctness is fast enough for interactive use.
+16. Replace the bootstrap runtime path with the IronMind CPU backend once full-token decode is fast enough for interactive use.
 
 ## License
 

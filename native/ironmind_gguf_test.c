@@ -115,6 +115,10 @@ int main(void) {
     const im_gguf_tensor * tensor = im_gguf_find_tensor(&gguf, "token_embd.weight");
     expect(tensor != NULL, "find tensor");
     expect(tensor->size_bytes == 16, "tensor bytes");
+    expect(im_gguf_set_residency(&gguf, 1024 * 1024, 1024 * 1024) == 0, "set residency");
+    expect(im_gguf_pin_tensor(&gguf, tensor) == 0, "pin tensor");
+    expect(im_gguf_residency_entries(&gguf) == 1, "residency entry");
+    expect(im_gguf_residency_used(&gguf) == 16, "residency used");
     float data[4] = {0};
     expect(im_gguf_read_tensor_data(&gguf, tensor, data, sizeof(data)) == 0, "read tensor");
     expect(fabsf(data[3] - 4.0f) < 1e-6f, "tensor data");

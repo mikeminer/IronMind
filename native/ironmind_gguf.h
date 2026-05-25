@@ -42,6 +42,7 @@ typedef struct im_gguf_file {
     uint64_t quantization_version;
 
     im_gguf_tensor * tensors;
+    void * residency;
 } im_gguf_file;
 
 int im_gguf_load(const char * path, im_gguf_file * out);
@@ -53,6 +54,12 @@ uint64_t im_gguf_tensor_cols(const im_gguf_tensor * tensor);
 int im_gguf_read_tensor_row_f32(const im_gguf_file * file, const im_gguf_tensor * tensor, uint64_t row, float * out, size_t cols);
 int im_gguf_read_tensor_f32(const im_gguf_file * file, const im_gguf_tensor * tensor, float * out, size_t values);
 int im_gguf_tensor_matvec(const im_gguf_file * file, const im_gguf_tensor * tensor, uint64_t row_start, uint64_t rows, const float * vector, float * out);
+int im_gguf_set_residency(im_gguf_file * file, uint64_t budget_bytes, uint64_t max_tensor_bytes);
+int im_gguf_pin_tensor(im_gguf_file * file, const im_gguf_tensor * tensor);
+uint64_t im_gguf_residency_budget(const im_gguf_file * file);
+uint64_t im_gguf_residency_max_tensor(const im_gguf_file * file);
+uint64_t im_gguf_residency_used(const im_gguf_file * file);
+uint64_t im_gguf_residency_entries(const im_gguf_file * file);
 int im_gguf_is_qwen_target(const im_gguf_file * file);
 int im_gguf_tensor_matvec_supported(const im_gguf_tensor * tensor);
 void im_gguf_print_summary(const im_gguf_file * file);

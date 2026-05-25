@@ -1,5 +1,7 @@
 #include "ironmind_quant.h"
 
+#include "ironmind_simd.h"
+
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -298,9 +300,7 @@ int im_quant_matvec(float * out, const void * matrix, int32_t type, size_t rows,
             free(row);
             return -1;
         }
-        double sum = 0.0;
-        for (size_t c = 0; c < cols; c++) sum += (double)row[c] * (double)vector[c];
-        out[r] = (float)sum;
+        out[r] = im_dot_f32(row, vector, cols);
     }
     free(row);
     return 0;

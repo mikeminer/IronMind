@@ -3,6 +3,7 @@
 #include "ironmind_forward.h"
 #include "ironmind_quant.h"
 #include "ironmind_qwen3.h"
+#include "ironmind_simd.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -83,6 +84,13 @@ static int native_probe(const char * path) {
     if (missing == 0 && unsupported == 0) {
         im_qwen3_model model;
         forward_ready = im_qwen3_model_load(&model, path, 1) == 0;
+        if (forward_ready) {
+            printf("  simdBackend          %s\n", im_simd_backend_name(im_simd_selected_backend()));
+            printf("  residencyBudgetMb    %" PRIu64 "\n", im_gguf_residency_budget(&model.gguf) / (1024u * 1024u));
+            printf("  residencyMaxTensorMb %" PRIu64 "\n", im_gguf_residency_max_tensor(&model.gguf) / (1024u * 1024u));
+            printf("  residencyUsedMb      %" PRIu64 "\n", im_gguf_residency_used(&model.gguf) / (1024u * 1024u));
+            printf("  residencyEntries     %" PRIu64 "\n", im_gguf_residency_entries(&model.gguf));
+        }
         im_qwen3_model_free(&model);
     }
     printf("  mappedTensors        %" PRIu64 "\n", mapped);
@@ -124,6 +132,9 @@ static int native_decode(const char * path, uint32_t token_id, uint32_t ctx) {
     const uint32_t next = im_qwen3_argmax(logits, model.cfg.n_vocab);
     printf("IronMind native decode\n");
     printf("  token               %u\n", token_id);
+    printf("  simdBackend         %s\n", im_simd_backend_name(im_simd_selected_backend()));
+    printf("  residencyUsedMb     %" PRIu64 "\n", im_gguf_residency_used(&model.gguf) / (1024u * 1024u));
+    printf("  residencyEntries    %" PRIu64 "\n", im_gguf_residency_entries(&model.gguf));
     printf("  logits              %u\n", model.cfg.n_vocab);
     printf("  nextTokenArgmax     %u\n", next);
     printf("  nextTokenLogit      %.9g\n", logits[next]);

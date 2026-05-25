@@ -1,6 +1,7 @@
 #include "ironmind_gguf.h"
 
 #include "ironmind_quant.h"
+#include "ironmind_simd.h"
 
 #include <errno.h>
 #include <inttypes.h>
@@ -16,6 +17,25 @@
 #define IM_FSEEK fseeko
 #define IM_FTELL ftello
 #endif
+
+#define IM_GGUF_IO_CHUNK_BYTES (4u * 1024u * 1024u)
+
+typedef struct im_gguf_cache_entry {
+    const im_gguf_tensor * tensor;
+    uint8_t * data;
+    uint64_t size;
+    uint64_t last_used;
+    int pinned;
+    struct im_gguf_cache_entry * next;
+} im_gguf_cache_entry;
+
+typedef struct im_gguf_residency {
+    uint64_t budget_bytes;
+    uint64_t max_tensor_bytes;
+    uint64_t used_bytes;
+    uint64_t tick;
+    im_gguf_cache_entry * entries;
+} im_gguf_residency;
 
 enum im_gguf_kv_type {
     IM_GGUF_TYPE_UINT8 = 0,
@@ -272,6 +292,100 @@ static uint64_t align_u64(uint64_t value, uint32_t alignment) {
     return (value + mask) & ~mask;
 }
 
+static void residency_free(im_gguf_residency * r) {
+    if (!r) return;
+    im_gguf_cache_entry * entry = r->entries;
+    while (entry) {
+        im_gguf_cache_entry * next = entry->next;
+        free(entry->data);
+        free(entry);
+        entry = next;
+    }
+    free(r);
+}
+
+static im_gguf_residency * residency_state(im_gguf_file * file) {
+    return file ? (im_gguf_residency *)file->residency : NULL;
+}
+
+static const im_gguf_residency * residency_state_const(const im_gguf_file * file) {
+    return file ? (const im_gguf_residency *)file->residency : NULL;
+}
+
+static im_gguf_cache_entry * residency_find(im_gguf_residency * r, const im_gguf_tensor * tensor) {
+    for (im_gguf_cache_entry * entry = r ? r->entries : NULL; entry; entry = entry->next) {
+        if (entry->tensor == tensor) return entry;
+    }
+    return NULL;
+}
+
+static int residency_read_tensor(const im_gguf_file * file, const im_gguf_tensor * tensor, uint8_t * dst) {
+    FILE * f = fopen(file->path, "rb");
+    if (!f) return 0;
+    const int ok = IM_FSEEK(f, (int64_t)tensor->absolute_offset, SEEK_SET) == 0 &&
+                   fread(dst, 1, (size_t)tensor->size_bytes, f) == (size_t)tensor->size_bytes;
+    fclose(f);
+    return ok;
+}
+
+static void residency_evict_until(im_gguf_residency * r, uint64_t needed) {
+    while (r && r->used_bytes + needed > r->budget_bytes) {
+        im_gguf_cache_entry * victim = NULL;
+        im_gguf_cache_entry * victim_prev = NULL;
+        im_gguf_cache_entry * prev = NULL;
+        for (im_gguf_cache_entry * entry = r->entries; entry; entry = entry->next) {
+            if (!entry->pinned && (!victim || entry->last_used < victim->last_used)) {
+                victim = entry;
+                victim_prev = prev;
+            }
+            prev = entry;
+        }
+        if (!victim) return;
+        if (victim_prev) victim_prev->next = victim->next;
+        else r->entries = victim->next;
+        r->used_bytes -= victim->size;
+        free(victim->data);
+        free(victim);
+    }
+}
+
+static const uint8_t * residency_get(im_gguf_file * file, const im_gguf_tensor * tensor, int pin) {
+    im_gguf_residency * r = residency_state(file);
+    if (!r || !tensor || tensor->size_bytes == 0 || r->budget_bytes == 0) return NULL;
+    im_gguf_cache_entry * entry = residency_find(r, tensor);
+    if (entry) {
+        entry->last_used = ++r->tick;
+        if (pin) entry->pinned = 1;
+        return entry->data;
+    }
+
+    if (tensor->size_bytes > r->budget_bytes) return NULL;
+    if (!pin && r->max_tensor_bytes && tensor->size_bytes > r->max_tensor_bytes) return NULL;
+    residency_evict_until(r, tensor->size_bytes);
+    if (r->used_bytes + tensor->size_bytes > r->budget_bytes) return NULL;
+
+    entry = (im_gguf_cache_entry *)calloc(1, sizeof(*entry));
+    if (!entry) return NULL;
+    entry->data = (uint8_t *)malloc((size_t)tensor->size_bytes);
+    if (!entry->data) {
+        free(entry);
+        return NULL;
+    }
+    if (!residency_read_tensor(file, tensor, entry->data)) {
+        free(entry->data);
+        free(entry);
+        return NULL;
+    }
+    entry->tensor = tensor;
+    entry->size = tensor->size_bytes;
+    entry->last_used = ++r->tick;
+    entry->pinned = pin;
+    entry->next = r->entries;
+    r->entries = entry;
+    r->used_bytes += entry->size;
+    return entry->data;
+}
+
 int im_gguf_load(const char * path, im_gguf_file * out) {
     if (!path || !out) return -1;
     memset(out, 0, sizeof(*out));
@@ -333,6 +447,7 @@ done:
 void im_gguf_free(im_gguf_file * file) {
     if (!file) return;
     free(file->path);
+    residency_free((im_gguf_residency *)file->residency);
     if (file->tensors) {
         for (uint64_t i = 0; i < file->tensor_count; i++) free(file->tensors[i].name);
     }
@@ -389,6 +504,12 @@ static int read_tensor_row_f32_from_file(FILE * f, const im_gguf_tensor * tensor
 
 int im_gguf_read_tensor_row_f32(const im_gguf_file * file, const im_gguf_tensor * tensor, uint64_t row, float * out, size_t cols) {
     if (!file || !tensor || !out) return -1;
+    const uint8_t * cached = residency_get((im_gguf_file *)file, tensor, 0);
+    if (cached) {
+        const size_t row_bytes = im_quant_row_size(tensor->type, cols);
+        if (row_bytes == 0 || row >= im_gguf_tensor_rows(tensor)) return -1;
+        return im_dequantize_row(out, cached + row * row_bytes, tensor->type, cols);
+    }
     FILE * f = fopen(file->path, "rb");
     if (!f) return -1;
     const int rc = read_tensor_row_f32_from_file(f, tensor, row, out, cols);
@@ -401,6 +522,15 @@ int im_gguf_read_tensor_f32(const im_gguf_file * file, const im_gguf_tensor * te
     const uint64_t cols = im_gguf_tensor_cols(tensor);
     const uint64_t rows = im_gguf_tensor_rows(tensor);
     if (cols == 0 || rows == 0 || values != (size_t)(cols * rows)) return -1;
+    const uint8_t * cached = residency_get((im_gguf_file *)file, tensor, 0);
+    if (cached) {
+        const size_t row_bytes = im_quant_row_size(tensor->type, (size_t)cols);
+        if (row_bytes == 0) return -1;
+        for (uint64_t row = 0; row < rows; row++) {
+            if (im_dequantize_row(out + row * cols, cached + row * row_bytes, tensor->type, (size_t)cols) != 0) return -1;
+        }
+        return 0;
+    }
     FILE * f = fopen(file->path, "rb");
     if (!f) return -1;
     int ok = 1;
@@ -423,38 +553,85 @@ int im_gguf_tensor_matvec(const im_gguf_file * file, const im_gguf_tensor * tens
     const size_t row_bytes = im_quant_row_size(tensor->type, cols);
     if (row_bytes == 0) return -1;
 
+    const uint8_t * cached = residency_get((im_gguf_file *)file, tensor, 0);
+    if (cached) {
+        return im_quant_matvec(out, cached + row_start * row_bytes, tensor->type, (size_t)rows, cols, vector);
+    }
+
     FILE * f = fopen(file->path, "rb");
     if (!f) return -1;
-    uint8_t * data = (uint8_t *)malloc(row_bytes);
-    float * deq = (float *)malloc(cols * sizeof(float));
-    if (!data || !deq) {
-        free(data);
-        free(deq);
+    size_t chunk_rows = IM_GGUF_IO_CHUNK_BYTES / row_bytes;
+    if (chunk_rows == 0) chunk_rows = 1;
+    if (chunk_rows > rows) chunk_rows = (size_t)rows;
+    uint8_t * data = (uint8_t *)malloc(chunk_rows * row_bytes);
+    if (!data) {
         fclose(f);
         return -1;
     }
 
     int ok = 1;
-    for (uint64_t row = 0; row < rows; row++) {
-        const uint64_t abs_row = row_start + row;
-        if (abs_row > (UINT64_MAX - tensor->absolute_offset) / row_bytes) {
+    uint64_t done = 0;
+    while (done < rows) {
+        size_t take = chunk_rows;
+        if ((uint64_t)take > rows - done) take = (size_t)(rows - done);
+        const uint64_t abs_row = row_start + done;
+        if (abs_row > (UINT64_MAX - tensor->absolute_offset) / row_bytes || take > SIZE_MAX / row_bytes) {
             ok = 0;
             break;
         }
         const uint64_t off = tensor->absolute_offset + abs_row * (uint64_t)row_bytes;
-        if (IM_FSEEK(f, (int64_t)off, SEEK_SET) != 0 || fread(data, 1, row_bytes, f) != row_bytes || im_dequantize_row(deq, data, tensor->type, cols) != 0) {
+        const size_t bytes = take * row_bytes;
+        if (IM_FSEEK(f, (int64_t)off, SEEK_SET) != 0 || fread(data, 1, bytes, f) != bytes ||
+            im_quant_matvec(out + done, data, tensor->type, take, cols, vector) != 0) {
             ok = 0;
             break;
         }
-        double sum = 0.0;
-        for (size_t c = 0; c < cols; c++) sum += (double)deq[c] * (double)vector[c];
-        out[row] = (float)sum;
+        done += take;
     }
 
     free(data);
-    free(deq);
     fclose(f);
     return ok ? 0 : -1;
+}
+
+int im_gguf_set_residency(im_gguf_file * file, uint64_t budget_bytes, uint64_t max_tensor_bytes) {
+    if (!file) return -1;
+    im_gguf_residency * r = residency_state(file);
+    if (!r) {
+        r = (im_gguf_residency *)calloc(1, sizeof(*r));
+        if (!r) return -1;
+        file->residency = r;
+    }
+    r->budget_bytes = budget_bytes;
+    r->max_tensor_bytes = max_tensor_bytes;
+    residency_evict_until(r, 0);
+    return r->used_bytes <= r->budget_bytes ? 0 : -1;
+}
+
+int im_gguf_pin_tensor(im_gguf_file * file, const im_gguf_tensor * tensor) {
+    return residency_get(file, tensor, 1) ? 0 : -1;
+}
+
+uint64_t im_gguf_residency_budget(const im_gguf_file * file) {
+    const im_gguf_residency * r = residency_state_const(file);
+    return r ? r->budget_bytes : 0;
+}
+
+uint64_t im_gguf_residency_max_tensor(const im_gguf_file * file) {
+    const im_gguf_residency * r = residency_state_const(file);
+    return r ? r->max_tensor_bytes : 0;
+}
+
+uint64_t im_gguf_residency_used(const im_gguf_file * file) {
+    const im_gguf_residency * r = residency_state_const(file);
+    return r ? r->used_bytes : 0;
+}
+
+uint64_t im_gguf_residency_entries(const im_gguf_file * file) {
+    const im_gguf_residency * r = residency_state_const(file);
+    uint64_t count = 0;
+    for (const im_gguf_cache_entry * entry = r ? r->entries : NULL; entry; entry = entry->next) count++;
+    return count;
 }
 
 int im_gguf_is_qwen_target(const im_gguf_file * file) {
