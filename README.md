@@ -77,6 +77,13 @@ npm run native:build
 .\build\Release\ironmind-inspect.exe C:\path\to\model.gguf
 ```
 
+Run the built-in 100-question evaluation suite:
+
+```powershell
+npm run eval -- stats
+npm run eval -- run --model qwen3:14b --limit 10
+```
+
 OpenAI-compatible example:
 
 ```powershell
@@ -98,7 +105,8 @@ Planned core milestones:
 5. Quantized CPU matmul kernels for AVX2/AVX512.
 6. Attention, RoPE, and KV-cache snapshots in RAM.
 7. Native tool-call replay and canonicalization.
-8. Replace the bootstrap runtime path with the IronMind CPU backend.
+8. Evaluation suite for physics, mathematics, and defensive security. Implemented as IronMind Eval 100.
+9. Replace the bootstrap runtime path with the IronMind CPU backend.
 
 ## License
 

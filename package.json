@@ -10,9 +10,10 @@
     "start": "node ./bin/ironmind.mjs serve",
     "doctor": "node ./bin/ironmind.mjs doctor",
     "inspect": "node ./tools/inspect-gguf.mjs",
+    "eval": "node ./tools/eval-suite.mjs",
     "native:build": "cmake -S . -B build && cmake --build build --config Release",
     "test": "node ./tools/test-foundations.mjs",
-    "check": "node --check ./bin/ironmind.mjs && node --check ./tools/inspect-gguf.mjs && node ./tools/test-foundations.mjs"
+    "check": "node --check ./bin/ironmind.mjs && node --check ./tools/inspect-gguf.mjs && node --check ./tools/eval-suite.mjs && node ./tools/test-foundations.mjs && node ./tools/eval-suite.mjs stats"
   },
   "engines": {
     "node": ">=18"
