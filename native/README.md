@@ -19,9 +19,13 @@ The native implementation should stay model-specific. The first target is Qwen3-
 4. `kernels_avx2.c`: baseline quantized dot/matmul kernels.
 5. `kernels_avx512.c`: optional high-end laptop fast path.
 6. `ironmind_math.c`: scalar RMSNorm, RoPE, softmax, attention kernels. AVX paths come next.
-7. `forward_qwen3.c`: QKV projection wiring, attention block, FFN block.
+7. `ironmind_forward.c`: native dense decode step with RAM KV cache and save/restore.
 8. `moe_qwen3.c`: router top-k and expert dispatch for Qwen3MoE.
 9. `kv_cache.c`: RAM KV state and IronKV save/restore.
 10. `eval_vectors.c`: logit/token regression runner.
+
+`ironmind_forward.c` currently runs an F32 Qwen-like dense decode path and proves the native KV lifecycle:
+token -> QKV -> q/k norm -> RoPE -> causal attention over RAM KV -> FFN -> logits, then save/load KV and continue.
+The next step is replacing F32 test matrices with GGUF-backed quantized weight views.
 
 The rule is simple: if a model does not match the selected target contract, the native backend should refuse it early.

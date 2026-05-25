@@ -14,7 +14,7 @@
     "map": "node ./tools/map-tensors.mjs",
     "eval": "node ./tools/eval-suite.mjs",
     "native:build": "cmake -S . -B build && cmake --build build --config Release",
-    "native:test": "npm run native:build && .\\build\\Release\\ironmind-math-test.exe",
+    "native:test": "npm run native:build && .\\build\\Release\\ironmind-math-test.exe && .\\build\\Release\\ironmind-forward-test.exe",
     "test": "node ./tools/test-foundations.mjs",
     "check": "node --check ./bin/ironmind.mjs && node --check ./tools/inspect-gguf.mjs && node --check ./tools/tokenize.mjs && node --check ./tools/map-tensors.mjs && node --check ./tools/eval-suite.mjs && node ./tools/test-foundations.mjs && node ./tools/eval-suite.mjs stats"
   },

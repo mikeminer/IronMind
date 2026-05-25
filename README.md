@@ -107,11 +107,12 @@ Planned core milestones:
 4. Tokenizer compatibility. Implemented for Qwen3 GGUF `gpt2/qwen2` BPE.
 5. Tensor mapping. Implemented for dense Qwen3 and Qwen3MoE tensor names.
 6. Scalar RMSNorm, RoPE, softmax, and attention kernels. Implemented in JS and native C.
-7. Quantized CPU matmul kernels for AVX2/AVX512.
-8. KV-cache snapshots in RAM and native IronKV payloads.
-9. Native tool-call replay and canonicalization.
-10. Evaluation suite for physics, mathematics, and defensive security. Implemented as IronMind Eval 100.
-11. Replace the bootstrap runtime path with the IronMind CPU backend.
+7. Native dense decode step with RAM KV cache save/restore. Implemented in `native/ironmind_forward.c`.
+8. Quantized CPU matmul kernels for AVX2/AVX512.
+9. Native IronKV payload format integration for full model sessions.
+10. Native tool-call replay and canonicalization.
+11. Evaluation suite for physics, mathematics, and defensive security. Implemented as IronMind Eval 100.
+12. Replace the bootstrap runtime path with the IronMind CPU backend.
 
 ## License
 
