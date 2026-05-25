@@ -1,7 +1,6 @@
 # IronMind
 
-IronMind is a native-first CPU/RAM local inference project for high-end laptops and workstations.
-It is inspired by DwarfStar's vertical design: one serious local model target at a time, RAM/disk KV-cache work, OpenAI-compatible APIs, and a connected local chatbot.
+IronMind is a small native CPU inference engine optimized for one local agentic model at a time. It targets ordinary laptops and workstations with 64GB+ RAM, using quantized GGUF weights, RAM/disk KV cache, OpenAI-compatible APIs, and an integrated local chatbot/agent.
 
 > Status: pre-alpha. The current bootstrap ships the server, chatbot, installer, and API shape while the native CPU engine is developed. For usable inference today it connects to a local Ollama or llama.cpp-compatible runtime.
 

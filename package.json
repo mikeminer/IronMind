@@ -1,7 +1,7 @@
 {
   "name": "ironmind",
   "version": "0.1.0",
-  "description": "Native-first CPU/RAM local inference shell with a connected chatbot.",
+  "description": "Small native CPU inference engine for one local agentic model at a time.",
   "type": "module",
   "bin": {
     "ironmind": "./bin/ironmind.mjs"
