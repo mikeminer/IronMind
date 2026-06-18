@@ -2,6 +2,7 @@
 
 #include "ironmind_math.h"
 
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +24,42 @@ typedef struct im_kv_file_header {
     uint32_t token_count;
     uint64_t payload_floats;
 } im_kv_file_header;
+
+static int write_u64_le(FILE * file, uint64_t value) {
+    uint8_t b[8] = {
+        (uint8_t)value,
+        (uint8_t)(value >> 8),
+        (uint8_t)(value >> 16),
+        (uint8_t)(value >> 24),
+        (uint8_t)(value >> 32),
+        (uint8_t)(value >> 40),
+        (uint8_t)(value >> 48),
+        (uint8_t)(value >> 56)
+    };
+    return fwrite(b, 1, sizeof(b), file) == sizeof(b);
+}
+
+static int read_u64_le(FILE * file, uint64_t * out) {
+    uint8_t b[8];
+    if (fread(b, 1, sizeof(b), file) != sizeof(b)) return 0;
+    *out = ((uint64_t)b[0]) |
+           ((uint64_t)b[1] << 8) |
+           ((uint64_t)b[2] << 16) |
+           ((uint64_t)b[3] << 24) |
+           ((uint64_t)b[4] << 32) |
+           ((uint64_t)b[5] << 40) |
+           ((uint64_t)b[6] << 48) |
+           ((uint64_t)b[7] << 56);
+    return 1;
+}
+
+static int write_ironkv_fixed(FILE * file, uint64_t header_len, uint64_t payload_len) {
+    static const char magic[8] = {'I', 'R', 'O', 'N', 'K', 'V', '1', '\0'};
+    return fwrite(magic, 1, sizeof(magic), file) == sizeof(magic) &&
+           write_u64_le(file, header_len) &&
+           write_u64_le(file, payload_len) &&
+           write_u64_le(file, 0);
+}
 
 static size_t im_q_dim(const im_forward_config * cfg) {
     return (size_t) cfg->n_head * (size_t) cfg->head_dim;
@@ -142,7 +179,29 @@ int im_kv_cache_save(const im_kv_cache * cache, const char * path) {
     header.token_count = cache->token_count;
     header.payload_floats = (uint64_t) cache->token_count * (uint64_t) im_kv_token_floats(&cache->cfg);
 
-    int ok = fwrite(&header, sizeof(header), 1, file) == 1;
+    char json[1024];
+    const int json_len = snprintf(
+        json,
+        sizeof(json),
+        "{\"kind\":\"ironmind.native-kv\",\"version\":1,\"payloadKind\":\"im-forward-f32\","
+        "\"tokenCount\":%u,\"contextSize\":%u,\"nLayer\":%u,\"nHeadKv\":%u,\"headDim\":%u,"
+        "\"payloadFloats\":%" PRIu64 "}",
+        cache->token_count,
+        cache->cfg.max_seq,
+        cache->cfg.n_layer,
+        cache->cfg.n_head_kv,
+        cache->cfg.head_dim,
+        header.payload_floats
+    );
+    if (json_len < 0 || (size_t)json_len >= sizeof(json)) {
+        fclose(file);
+        return -1;
+    }
+
+    const uint64_t payload_len = (uint64_t)sizeof(header) + header.payload_floats * 2u * (uint64_t)sizeof(float);
+    int ok = write_ironkv_fixed(file, (uint64_t)json_len, payload_len);
+    ok = ok && fwrite(json, 1, (size_t)json_len, file) == (size_t)json_len;
+    ok = ok && fwrite(&header, sizeof(header), 1, file) == 1;
     ok = ok && im_kv_write_active(file, cache->key, &cache->cfg, cache->token_count);
     ok = ok && im_kv_write_active(file, cache->value, &cache->cfg, cache->token_count);
     fclose(file);
@@ -154,8 +213,22 @@ int im_kv_cache_load(im_kv_cache * cache, const im_forward_config * cfg, const c
     FILE * file = fopen(path, "rb");
     if (!file) return -1;
 
+    char magic[8];
     im_kv_file_header header;
-    int ok = fread(&header, sizeof(header), 1, file) == 1;
+    int ok = fread(magic, 1, sizeof(magic), file) == sizeof(magic);
+    if (ok && memcmp(magic, "IRONKV1", 7) == 0) {
+        uint64_t json_len = 0;
+        uint64_t payload_len = 0;
+        uint64_t reserved = 0;
+        ok = read_u64_le(file, &json_len) && read_u64_le(file, &payload_len) && read_u64_le(file, &reserved);
+        ok = ok && payload_len >= sizeof(header);
+        ok = ok && json_len <= (1024ull * 1024ull);
+        ok = ok && fseek(file, (long)json_len, SEEK_CUR) == 0;
+        ok = ok && fread(&header, sizeof(header), 1, file) == 1;
+    } else if (ok) {
+        rewind(file);
+        ok = fread(&header, sizeof(header), 1, file) == 1;
+    }
     if (!ok || memcmp(header.magic, "IMKVFWD", 7) != 0 || header.version != 1) {
         fclose(file);
         return -1;

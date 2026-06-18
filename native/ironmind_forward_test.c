@@ -111,6 +111,14 @@ int main(void) {
 
     const char * path = "ironmind-forward-test.imkv";
     expect(im_kv_cache_save(&cache, path) == 0, "cache save");
+    {
+        FILE * saved = fopen(path, "rb");
+        char magic[8] = {0};
+        expect(saved != NULL, "open saved IronKV");
+        expect(fread(magic, 1, sizeof(magic), saved) == sizeof(magic), "read saved IronKV magic");
+        fclose(saved);
+        expect(memcmp(magic, "IRONKV1", 7) == 0, "saved cache uses IronKV container");
+    }
 
     im_kv_cache restored;
     memset(&restored, 0, sizeof(restored));
