@@ -38,7 +38,7 @@ IronMind is organized around a vertical local stack:
 - Prompt renderer: model-specific chat and tool formatting.
 - Connected chatbot: local browser UI streamed from the IronMind server.
 - OpenAI-compatible API: `/v1/models` and `/v1/chat/completions`.
-- Clinical screening APIs: `/v1/clinical/image/quality` and `/v1/clinical/triage`.
+- Clinical screening APIs: `/v1/clinical/screening`, `/v1/clinical/image/quality`, and `/v1/clinical/triage`.
 - Agent path: future `/v1/responses` and Anthropic-compatible `/v1/messages`.
 - KV strategy: RAM session first, disk persistence next.
 - Bench/eval discipline: token throughput, prompt rendering checks, and regression traces.
@@ -59,7 +59,7 @@ The intended output is not a diagnosis. It is a structured screening package:
 - explainability score;
 - human review recommendation and priority.
 
-The first MVP step is available in the local UI as `Clinical Image Triage`: load a PNG, JPEG, or WebP image and IronMind computes CPU-side readiness metrics before any model review.
+The first MVP step is available in the local UI as `Clinical Image Triage`: load a PNG, JPEG, or WebP image, or run the built-in demo case, and IronMind computes CPU-side readiness metrics, a non-diagnostic demo screening package, review priority, and an exportable case JSON.
 
 Expected clinical impact after validation includes earlier cancer and cardiovascular screening support, faster prioritisation of critical cases, lower radiology workload pressure, remote screening support for underserved regions, and reduced delays through PACS/RIS/EHR-oriented workflows.
 
@@ -69,6 +69,14 @@ Image quality gate API:
 curl http://127.0.0.1:4141/v1/clinical/image/quality `
   -H "Content-Type: application/json" `
   -d '{ "fileName": "case.png", "mimeType": "image/png", "modality": "xray", "bodyRegion": "chest", "width": 1600, "height": 1400, "pixelStats": { "lumaMean": 126, "lumaStdDev": 58, "laplacianMean": 24, "highFrequencyNoise": 0.08, "saturationRatio": 0.01, "darkRatio": 0.01, "brightRatio": 0.01 } }'
+```
+
+End-to-end screening case API:
+
+```powershell
+curl http://127.0.0.1:4141/v1/clinical/screening `
+  -H "Content-Type: application/json" `
+  -d '{ "image": { "fileName": "case.png", "mimeType": "image/png", "modality": "xray", "bodyRegion": "chest", "width": 1600, "height": 1400, "pixelStats": { "lumaMean": 126, "lumaStdDev": 58, "laplacianMean": 24, "highFrequencyNoise": 0.08, "saturationRatio": 0.01, "darkRatio": 0.01, "brightRatio": 0.01 } } }'
 ```
 
 Example:

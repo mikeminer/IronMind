@@ -18,6 +18,7 @@ import {
   scoreModelAgreement
 } from "../lib/clinicalScoring.mjs";
 import { assessImageQuality, scoreResolution } from "../lib/imageQuality.mjs";
+import { createClinicalScreeningCase, createDemoModelOutputs } from "../lib/clinicalScreening.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
@@ -71,6 +72,65 @@ const lowQualityImage = assessImageQuality({
 });
 assert.equal(lowQualityImage.screeningReadiness, "repeat_or_manual_image_review");
 assert.equal(lowQualityImage.humanReviewRequired, true);
+
+const demoModelOutputs = createDemoModelOutputs({
+  width: 1600,
+  height: 1400,
+  pixelStats: {
+    lumaMean: 126,
+    lumaStdDev: 58,
+    laplacianMean: 24,
+    highFrequencyNoise: 0.08,
+    saturationRatio: 0.01,
+    darkRatio: 0.01,
+    brightRatio: 0.01
+  }
+}, highQualityImage);
+assert.equal(demoModelOutputs.length, 2);
+assert.ok(demoModelOutputs.every((output) => output.intendedUse === "non_diagnostic_screening_demo"));
+
+const screeningCase = createClinicalScreeningCase({
+  image: {
+    fileName: "case.png",
+    mimeType: "image/png",
+    modality: "xray",
+    bodyRegion: "chest",
+    width: 1600,
+    height: 1400,
+    pixelStats: {
+      lumaMean: 126,
+      lumaStdDev: 58,
+      laplacianMean: 24,
+      highFrequencyNoise: 0.08,
+      saturationRatio: 0.01,
+      darkRatio: 0.01,
+      brightRatio: 0.01
+    }
+  }
+}, { createdAt: "2026-06-18T12:00:00.000Z" });
+assert.equal(screeningCase.kind, "ironmind.clinical-screening-case.v1");
+assert.match(screeningCase.caseId, /^IM-[A-F0-9]{8}$/);
+assert.equal(screeningCase.audit.modelAdapterMode, "demo_cpu_adapter");
+assert.notEqual(screeningCase.triage.reviewPriority, "quality_gate");
+assert.ok(screeningCase.exportFileName.endsWith(".ironmind-screening.json"));
+
+const lowQualityScreeningCase = createClinicalScreeningCase({
+  image: {
+    width: 320,
+    height: 240,
+    pixelStats: {
+      lumaMean: 20,
+      lumaStdDev: 8,
+      laplacianMean: 2,
+      highFrequencyNoise: 0.75,
+      saturationRatio: 0.2,
+      darkRatio: 0.4,
+      brightRatio: 0
+    }
+  }
+}, { createdAt: "2026-06-18T12:00:00.000Z" });
+assert.equal(lowQualityScreeningCase.triage.reviewPriority, "quality_gate");
+assert.equal(lowQualityScreeningCase.reviewQueue.humanReviewRequired, true);
 
 assert.equal(scoreImageQuality({ score: 1.2 }), 1);
 assert.ok(scoreImageQuality({

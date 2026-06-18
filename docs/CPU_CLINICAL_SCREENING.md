@@ -80,10 +80,13 @@ Clinician feedback and post-deployment monitoring
 The first practical MVP slice is an image-quality gate for screening readiness:
 
 - browser upload for PNG, JPEG, and WebP images in the local IronMind UI;
+- one-click demo case for proposal walkthroughs without external files;
 - client-side extraction of resolution, exposure, contrast, blur, noise, clipping, and missing-pixel indicators;
 - `POST /v1/clinical/image/quality` to normalize those metrics into a quality score;
+- `POST /v1/clinical/screening` to create an end-to-end screening case package;
 - explicit `ready_for_model_review` versus `repeat_or_manual_image_review` routing;
-- human review required when quality is too low or ambiguous.
+- human review required when quality is too low or ambiguous;
+- local UI display of quality, risk, confidence, uncertainty, agreement, explainability, review priority, and case export.
 
 This deliberately avoids making a clinical diagnosis. It proves the controllable
 workflow needed before routing an image into validated medical imaging models.
@@ -116,6 +119,40 @@ Example quality output:
 
 The broader triage contract is implemented in `lib/clinicalScoring.mjs` and exposed
 through `POST /v1/clinical/triage`.
+
+The product-level MVP contract is implemented in `lib/clinicalScreening.mjs` and
+exposed through `POST /v1/clinical/screening`. It accepts either real model outputs
+from future adapters or uses a local CPU demo adapter so the workflow can run today.
+
+Example screening case output:
+
+```json
+{
+  "kind": "ironmind.clinical-screening-case.v1",
+  "caseId": "IM-1234ABCD",
+  "productStatus": "mvp_non_diagnostic_decision_support",
+  "imageQuality": {
+    "score": 0.91,
+    "screeningReadiness": "ready_for_model_review"
+  },
+  "triage": {
+    "recommendation": "clinician_review",
+    "reviewPriority": "medium",
+    "scores": {
+      "riskScore": 0.48,
+      "confidenceScore": 0.78,
+      "uncertaintyScore": 0.24,
+      "modelAgreementScore": 0.94,
+      "imageQualityScore": 0.91,
+      "explainabilityScore": 0.82
+    }
+  },
+  "reviewQueue": {
+    "humanReviewRequired": true,
+    "nextActions": ["Route to clinician review because one or more safety thresholds were triggered."]
+  }
+}
+```
 
 Example output:
 
@@ -165,12 +202,14 @@ Example request:
 2. Medical image input layer
    - Implemented browser image upload for standard image files.
    - Implemented quality scoring for resolution, exposure, contrast, blur, noise, and artifacts.
+   - Implemented end-to-end screening case export for demo and proposal review.
    - Next: DICOM ingestion, metadata checks, and modality-specific thresholds.
 
 3. Model adapter layer
-   - Wrap existing medical imaging models.
-   - Normalise model outputs into risk/confidence/uncertainty fields.
-   - Track model version and intended use.
+   - Implemented local non-diagnostic CPU demo adapter for an end-to-end MVP.
+   - Next: wrap existing medical imaging models.
+   - Next: normalise model outputs into risk/confidence/uncertainty fields.
+   - Next: track model version and intended use.
 
 4. Explainability layer
    - Store heatmap or region references.

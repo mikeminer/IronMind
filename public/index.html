@@ -46,7 +46,7 @@
           <div class="clinical-head">
             <div>
               <h2>Clinical Image Triage</h2>
-              <p>CPU-ready quality gate</p>
+              <p>CPU screening case review</p>
             </div>
             <label class="file-pick">
               <span>Image</span>
@@ -74,7 +74,11 @@
                 Body region
                 <input id="clinicalRegion" value="chest" autocomplete="off">
               </label>
-              <button id="clinicalAnalyze" type="button" disabled>Analyze</button>
+              <div class="clinical-actions">
+                <button id="clinicalAnalyze" type="button" disabled>Run screening</button>
+                <button id="clinicalDemo" type="button">Demo case</button>
+                <button id="clinicalExport" type="button" disabled>Export case</button>
+              </div>
             </div>
             <div class="clinical-result" id="clinicalResult">
               <div class="metric">
@@ -82,16 +86,32 @@
                 <strong id="qualityScore">-</strong>
               </div>
               <div class="metric">
+                <span>Risk</span>
+                <strong id="riskScore">-</strong>
+              </div>
+              <div class="metric">
+                <span>Confidence</span>
+                <strong id="confidenceScore">-</strong>
+              </div>
+              <div class="metric">
+                <span>Uncertainty</span>
+                <strong id="uncertaintyScore">-</strong>
+              </div>
+              <div class="metric">
                 <span>Readiness</span>
                 <strong id="qualityReadiness">-</strong>
               </div>
               <div class="metric">
-                <span>Resolution</span>
-                <strong id="resolutionScore">-</strong>
+                <span>Priority</span>
+                <strong id="reviewPriority">-</strong>
               </div>
               <div class="metric">
-                <span>Sharpness</span>
-                <strong id="sharpnessScore">-</strong>
+                <span>Agreement</span>
+                <strong id="agreementScore">-</strong>
+              </div>
+              <div class="metric">
+                <span>Explainability</span>
+                <strong id="explainabilityScore">-</strong>
               </div>
               <div class="quality-reasons" id="qualityReasons">Awaiting image.</div>
             </div>

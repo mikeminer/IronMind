@@ -10,18 +10,45 @@ const kvDiskEl = document.querySelector("#kvDisk");
 const thinkEl = document.querySelector("#think");
 const clinicalFileEl = document.querySelector("#clinicalFile");
 const clinicalPreviewEl = document.querySelector("#clinicalPreview");
+const clinicalPreviewEmptyEl = document.querySelector("#clinicalPreviewEmpty");
 const clinicalAnalyzeEl = document.querySelector("#clinicalAnalyze");
+const clinicalDemoEl = document.querySelector("#clinicalDemo");
+const clinicalExportEl = document.querySelector("#clinicalExport");
 const clinicalModalityEl = document.querySelector("#clinicalModality");
 const clinicalRegionEl = document.querySelector("#clinicalRegion");
 const clinicalResultEl = document.querySelector("#clinicalResult");
 const qualityScoreEl = document.querySelector("#qualityScore");
 const qualityReadinessEl = document.querySelector("#qualityReadiness");
-const resolutionScoreEl = document.querySelector("#resolutionScore");
-const sharpnessScoreEl = document.querySelector("#sharpnessScore");
+const riskScoreEl = document.querySelector("#riskScore");
+const confidenceScoreEl = document.querySelector("#confidenceScore");
+const uncertaintyScoreEl = document.querySelector("#uncertaintyScore");
+const reviewPriorityEl = document.querySelector("#reviewPriority");
+const agreementScoreEl = document.querySelector("#agreementScore");
+const explainabilityScoreEl = document.querySelector("#explainabilityScore");
 const qualityReasonsEl = document.querySelector("#qualityReasons");
 
 let clinicalImagePayload = null;
 let clinicalPreviewUrl = null;
+let lastClinicalCase = null;
+
+const demoClinicalImagePayload = Object.freeze({
+  fileName: "demo-chest-screening.png",
+  mimeType: "image/png",
+  width: 1600,
+  height: 1400,
+  modality: "xray",
+  bodyRegion: "chest",
+  pixelStats: {
+    lumaMean: 126,
+    lumaStdDev: 58,
+    laplacianMean: 24,
+    highFrequencyNoise: 0.08,
+    saturationRatio: 0.01,
+    missingPixelRatio: 0,
+    darkRatio: 0.01,
+    brightRatio: 0.01
+  }
+});
 
 const messages = [
   {
@@ -65,17 +92,46 @@ function formatReadiness(value) {
   return String(value).replace(/_/g, " ");
 }
 
-function setClinicalQualityState(result = {}) {
-  const scores = result.scores || {};
-  qualityScoreEl.textContent = formatScore(result.score);
-  qualityReadinessEl.textContent = formatReadiness(result.screeningReadiness);
-  resolutionScoreEl.textContent = formatScore(scores.resolutionScore);
-  sharpnessScoreEl.textContent = formatScore(scores.sharpnessScore);
-  qualityReasonsEl.textContent = result.reasons?.length
-    ? result.reasons.map(formatReadiness).join(", ")
-    : "Ready for model review.";
-  clinicalResultEl.classList.toggle("needs-review", Boolean(result.humanReviewRequired));
-  clinicalResultEl.classList.toggle("ready", result.screeningReadiness === "ready_for_model_review");
+function resetClinicalResult(message = "Awaiting image.") {
+  lastClinicalCase = null;
+  clinicalExportEl.disabled = true;
+  qualityScoreEl.textContent = "-";
+  riskScoreEl.textContent = "-";
+  confidenceScoreEl.textContent = "-";
+  uncertaintyScoreEl.textContent = "-";
+  qualityReadinessEl.textContent = "-";
+  reviewPriorityEl.textContent = "-";
+  agreementScoreEl.textContent = "-";
+  explainabilityScoreEl.textContent = "-";
+  qualityReasonsEl.textContent = message;
+  clinicalResultEl.classList.remove("ready", "needs-review");
+}
+
+function setClinicalScreeningState(result = {}) {
+  lastClinicalCase = result;
+  const imageQuality = result.imageQuality || {};
+  const triage = result.triage || {};
+  const scores = triage.scores || {};
+  const reviewQueue = result.reviewQueue || {};
+  const reasons = reviewQueue.reasons?.length ? reviewQueue.reasons : triage.reasons || [];
+  const actions = reviewQueue.nextActions || [];
+
+  qualityScoreEl.textContent = formatScore(imageQuality.score);
+  riskScoreEl.textContent = formatScore(scores.riskScore);
+  confidenceScoreEl.textContent = formatScore(scores.confidenceScore);
+  uncertaintyScoreEl.textContent = formatScore(scores.uncertaintyScore);
+  qualityReadinessEl.textContent = formatReadiness(imageQuality.screeningReadiness);
+  reviewPriorityEl.textContent = formatReadiness(reviewQueue.priority || triage.reviewPriority);
+  agreementScoreEl.textContent = formatScore(scores.modelAgreementScore);
+  explainabilityScoreEl.textContent = formatScore(scores.explainabilityScore);
+  qualityReasonsEl.textContent = [
+    formatReadiness(reviewQueue.recommendation || triage.recommendation),
+    ...reasons.map(formatReadiness),
+    ...actions
+  ].filter(Boolean).join(" | ");
+  clinicalResultEl.classList.toggle("needs-review", Boolean(reviewQueue.humanReviewRequired || triage.humanReviewRequired));
+  clinicalResultEl.classList.toggle("ready", !reviewQueue.humanReviewRequired && imageQuality.screeningReadiness === "ready_for_model_review");
+  clinicalExportEl.disabled = false;
 }
 
 function loadImageElement(file) {
@@ -178,26 +234,31 @@ function imagePayloadFromCanvas(file, image, maxSide = 384) {
 async function analyzeClinicalImage() {
   if (!clinicalImagePayload) return;
   clinicalAnalyzeEl.disabled = true;
-  qualityReasonsEl.textContent = "Analyzing image quality...";
+  clinicalExportEl.disabled = true;
+  qualityReasonsEl.textContent = "Running screening...";
   clinicalResultEl.classList.remove("ready", "needs-review");
 
   try {
-    const response = await fetch("/v1/clinical/image/quality", {
+    const response = await fetch("/v1/clinical/screening", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        ...clinicalImagePayload,
-        modality: clinicalModalityEl.value,
-        bodyRegion: clinicalRegionEl.value.trim() || null
+        image: {
+          ...clinicalImagePayload,
+          modality: clinicalModalityEl.value,
+          bodyRegion: clinicalRegionEl.value.trim() || null
+        }
       })
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.detail || `HTTP ${response.status}`);
     }
-    setClinicalQualityState(await response.json());
+    setClinicalScreeningState(await response.json());
   } catch (error) {
-    qualityReasonsEl.textContent = `Quality gate error: ${error.message}`;
+    lastClinicalCase = null;
+    clinicalExportEl.disabled = true;
+    qualityReasonsEl.textContent = `Screening error: ${error.message}`;
     clinicalResultEl.classList.add("needs-review");
   } finally {
     clinicalAnalyzeEl.disabled = false;
@@ -207,12 +268,7 @@ async function analyzeClinicalImage() {
 async function prepareClinicalImage(file) {
   if (!file) return;
   clinicalAnalyzeEl.disabled = true;
-  qualityScoreEl.textContent = "-";
-  qualityReadinessEl.textContent = "-";
-  resolutionScoreEl.textContent = "-";
-  sharpnessScoreEl.textContent = "-";
-  qualityReasonsEl.textContent = "Loading image...";
-  clinicalResultEl.classList.remove("ready", "needs-review");
+  resetClinicalResult("Loading image...");
 
   try {
     const { image, url } = await loadImageElement(file);
@@ -220,15 +276,45 @@ async function prepareClinicalImage(file) {
     clinicalPreviewUrl = url;
     clinicalPreviewEl.src = url;
     clinicalPreviewEl.alt = file.name;
+    clinicalPreviewEmptyEl.textContent = "No image loaded";
     clinicalPreviewEl.parentElement.classList.add("loaded");
     clinicalImagePayload = imagePayloadFromCanvas(file, image);
     clinicalAnalyzeEl.disabled = false;
     await analyzeClinicalImage();
   } catch (error) {
     clinicalImagePayload = null;
-    qualityReasonsEl.textContent = `Image load error: ${error.message}`;
+    resetClinicalResult(`Image load error: ${error.message}`);
     clinicalResultEl.classList.add("needs-review");
   }
+}
+
+async function runDemoClinicalCase() {
+  if (clinicalPreviewUrl) {
+    URL.revokeObjectURL(clinicalPreviewUrl);
+    clinicalPreviewUrl = null;
+  }
+  clinicalFileEl.value = "";
+  clinicalPreviewEl.removeAttribute("src");
+  clinicalPreviewEl.alt = "";
+  clinicalPreviewEl.parentElement.classList.remove("loaded");
+  clinicalPreviewEmptyEl.textContent = "Demo case";
+  clinicalImagePayload = { ...demoClinicalImagePayload };
+  clinicalAnalyzeEl.disabled = false;
+  resetClinicalResult("Demo case ready.");
+  await analyzeClinicalImage();
+}
+
+function exportClinicalCase() {
+  if (!lastClinicalCase) return;
+  const blob = new Blob([JSON.stringify(lastClinicalCase, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = lastClinicalCase.exportFileName || `${lastClinicalCase.caseId || "ironmind-case"}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
 async function readNdjson(response, onObject) {
@@ -331,6 +417,14 @@ clinicalFileEl.addEventListener("change", () => {
 
 clinicalAnalyzeEl.addEventListener("click", () => {
   analyzeClinicalImage();
+});
+
+clinicalDemoEl.addEventListener("click", () => {
+  runDemoClinicalCase();
+});
+
+clinicalExportEl.addEventListener("click", () => {
+  exportClinicalCase();
 });
 
 async function loadHealth() {
