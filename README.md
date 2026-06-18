@@ -4,7 +4,7 @@ IronMind is a small native CPU inference engine and local AI orchestration layer
 
 The current strategic direction includes CPU-efficient clinical imaging triage: using local, quantized inference and model orchestration to support early screening workflows in resource-limited medical centres.
 
-> Status: pre-alpha. The current bootstrap ships the server, chatbot, installer, and API shape while the native CPU engine is developed. For usable inference today it connects to a local Ollama or llama.cpp-compatible runtime.
+> Status: pre-alpha. The current bootstrap ships the server, chatbot, installer, and API shape while the native CPU engine is developed. For usable inference today it connects to a local Ollama or llama.cpp-compatible runtime and forces a CPU-only low-latency profile by default.
 
 ## Install
 
@@ -29,6 +29,19 @@ The context target is 100k+ tokens, with RAM used for the active working set and
 The first recommended target is `qwen3-coder:30b` because it is useful for coding agents, has a practical memory footprint, and gives IronMind a narrow model path to optimize around.
 
 For clinical screening, the value proposition is different: IronMind is the CPU-first orchestration and triage layer around specialised medical imaging models. It is intended to prioritise cases for human review, not to replace clinical judgement.
+
+## CPU-Only Low-Latency Mode
+
+IronMind now defaults to a CPU-only runtime policy for interactive inference:
+
+- forces Ollama GPU layers to zero with `num_gpu: 0`;
+- keeps the model warm with `keep_alive`;
+- caps interactive context with `IRONMIND_CPU_CTX` to reduce prefill latency;
+- caps default output with `IRONMIND_CPU_MAX_TOKENS`;
+- sets CPU thread and batch options through `IRONMIND_CPU_THREADS` and `IRONMIND_CPU_BATCH`;
+- injects a runtime system message so the local chatbot does not claim GPU acceleration.
+
+The default profile is `low-latency`: `ctx=4096`, `max_tokens=128`, `batch=128`, and CPU threads selected from the local machine. Use `balanced` or `full-context` only when longer context matters more than response latency.
 
 ## Design
 
@@ -126,6 +139,13 @@ IRONMIND_PORT=4141
 IRONMIND_OLLAMA_URL=http://127.0.0.1:11434
 IRONMIND_BACKEND=auto
 IRONMIND_NATIVE_MODEL=C:\path\to\model.gguf
+IRONMIND_CPU_ONLY=true
+IRONMIND_CPU_PROFILE=low-latency
+IRONMIND_CPU_THREADS=10
+IRONMIND_CPU_BATCH=128
+IRONMIND_CPU_CTX=4096
+IRONMIND_CPU_MAX_TOKENS=128
+IRONMIND_CPU_KEEP_ALIVE=30m
 IRONMIND_NATIVE_CACHE_MB=512
 IRONMIND_NATIVE_CACHE_MAX_TENSOR_MB=64
 ```

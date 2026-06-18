@@ -19,6 +19,12 @@ import {
 } from "../lib/clinicalScoring.mjs";
 import { assessImageQuality, scoreResolution } from "../lib/imageQuality.mjs";
 import { createClinicalScreeningCase, createDemoModelOutputs } from "../lib/clinicalScreening.mjs";
+import {
+  applyCpuPerformanceOptions,
+  defaultCpuThreads,
+  ensureCpuSystemMessage,
+  resolveCpuPerformanceConfig
+} from "../lib/cpuPerformance.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
@@ -34,6 +40,42 @@ const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ironmind-"));
 const extensionlessGguf = path.join(dir, "ollama-blob");
 await fs.writeFile(extensionlessGguf, Buffer.from("GGUF"));
 assert.equal(isGgufModel(extensionlessGguf), true);
+
+assert.equal(defaultCpuThreads(16), 12);
+const cpuPerf = resolveCpuPerformanceConfig({
+  cpuOnly: true,
+  cpuProfile: "low-latency",
+  cpuThreads: 10,
+  cpuBatch: 128,
+  cpuInteractiveCtx: 4096,
+  cpuMaxTokens: 128
+});
+assert.equal(cpuPerf.cpuOnly, true);
+assert.equal(cpuPerf.profile, "low-latency");
+assert.equal(cpuPerf.forceGpuLayers, 0);
+assert.equal(cpuPerf.threads, 10);
+const cpuOptions = applyCpuPerformanceOptions({
+  ctx: 131072,
+  cpuOnly: true,
+  cpuProfile: "low-latency",
+  cpuThreads: 10,
+  cpuBatch: 128,
+  cpuInteractiveCtx: 4096,
+  cpuMaxTokens: 128,
+  cpuKeepAlive: "30m"
+}, {
+  ctx: 40960,
+  options: { num_gpu: 99 }
+});
+assert.equal(cpuOptions.options.num_gpu, 0);
+assert.equal(cpuOptions.options.num_ctx, 4096);
+assert.equal(cpuOptions.options.num_thread, 10);
+assert.equal(cpuOptions.options.num_batch, 128);
+assert.equal(cpuOptions.options.num_predict, 128);
+assert.equal(cpuOptions.keepAlive, "30m");
+const cpuMessages = ensureCpuSystemMessage([{ role: "user", content: "GPU?" }]);
+assert.equal(cpuMessages[0].role, "system");
+assert.match(cpuMessages[0].content, /CPU-only/);
 
 assert.equal(scoreResolution(1024, 1024), 1);
 const highQualityImage = assessImageQuality({

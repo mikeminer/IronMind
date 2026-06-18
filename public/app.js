@@ -7,6 +7,7 @@ const statusEl = document.querySelector("#status");
 const modelEl = document.querySelector("#model");
 const ctxEl = document.querySelector("#ctx");
 const kvDiskEl = document.querySelector("#kvDisk");
+const cpuModeEl = document.querySelector("#cpuMode");
 const thinkEl = document.querySelector("#think");
 const clinicalFileEl = document.querySelector("#clinicalFile");
 const clinicalPreviewEl = document.querySelector("#clinicalPreview");
@@ -90,6 +91,12 @@ function formatScore(value) {
 function formatReadiness(value) {
   if (!value) return "-";
   return String(value).replace(/_/g, " ");
+}
+
+function cpuModeText(performance = {}) {
+  const mode = performance.cpuOnly ? "CPU-only" : "GPU allowed";
+  const ctx = performance.interactiveContext || "full";
+  return `${mode}, ${performance.profile || "unknown"}, ctx=${ctx}, threads=${performance.threads || "-"}`;
 }
 
 function resetClinicalResult(message = "Awaiting image.") {
@@ -374,7 +381,9 @@ async function sendPrompt(text) {
       if (event.type === "done") {
         const snapshot = event.contextSnapshot;
         const cached = snapshot ? `, disk=${snapshot.estimatedTokens}t` : "";
-        setStatus(`Done. prompt=${event.promptEvalCount || 0}, output=${event.evalCount || 0}${cached}`);
+        const speed = event.tokensPerSecond ? `, ${event.tokensPerSecond} tok/s` : "";
+        const latency = event.totalDurationMs ? `, ${Math.round(event.totalDurationMs / 100) / 10}s` : "";
+        setStatus(`Done. prompt=${event.promptEvalCount || 0}, output=${event.evalCount || 0}${speed}${latency}${cached}`);
       }
     });
   } catch (error) {
@@ -432,14 +441,15 @@ async function loadHealth() {
     const response = await fetch("/health");
     const health = await response.json();
     modelEl.value = health.model;
-    ctxEl.value = health.context;
+    ctxEl.value = health.cpuPerformance?.interactiveContext || health.context;
     kvDiskEl.value = health.kvDiskDir;
+    cpuModeEl.value = cpuModeText(health.cpuPerformance);
     if (messages.length === 1 && messages[0].role === "assistant") {
       messages[0].content = `IronMind is ready with ${health.model}.`;
       render();
     }
     const files = health.contextStore?.files || 0;
-    setStatus(`Backend: ${health.backend}; disk context files=${files}`);
+    setStatus(`Backend: ${health.backend}; ${cpuModeText(health.cpuPerformance)}; disk files=${files}`);
   } catch {
     setStatus("Health check failed", true);
   }

@@ -27,6 +27,12 @@ import { canonicalizeMessages, canonicalizeTools, canonicalizeToolCalls } from "
 import { createClinicalTriage } from "../lib/clinicalScoring.mjs";
 import { assessImageQuality } from "../lib/imageQuality.mjs";
 import { createClinicalScreeningCase } from "../lib/clinicalScreening.mjs";
+import {
+  applyCpuPerformanceOptions,
+  defaultCpuThreads,
+  ensureCpuSystemMessage,
+  resolveCpuPerformanceConfig
+} from "../lib/cpuPerformance.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
@@ -44,7 +50,14 @@ const defaults = {
   backend: "auto",
   nativeModel: "",
   nativeMaxTokens: 16,
-  nativeTimeoutMs: 300000
+  nativeTimeoutMs: 300000,
+  cpuOnly: true,
+  cpuProfile: "low-latency",
+  cpuThreads: defaultCpuThreads(),
+  cpuBatch: 128,
+  cpuInteractiveCtx: 4096,
+  cpuMaxTokens: 128,
+  cpuKeepAlive: "30m"
 };
 
 function readUserConfig() {
@@ -61,6 +74,13 @@ function readUserConfig() {
     if (parsed.nativeModel) config.nativeModel = parsed.nativeModel;
     if (parsed.nativeMaxTokens) config.nativeMaxTokens = Number(parsed.nativeMaxTokens);
     if (parsed.nativeTimeoutMs) config.nativeTimeoutMs = Number(parsed.nativeTimeoutMs);
+    if (parsed.cpuOnly !== undefined) config.cpuOnly = parsed.cpuOnly;
+    if (parsed.cpuProfile) config.cpuProfile = parsed.cpuProfile;
+    if (parsed.cpuThreads) config.cpuThreads = Number(parsed.cpuThreads);
+    if (parsed.cpuBatch) config.cpuBatch = Number(parsed.cpuBatch);
+    if (parsed.cpuInteractiveCtx) config.cpuInteractiveCtx = Number(parsed.cpuInteractiveCtx);
+    if (parsed.cpuMaxTokens) config.cpuMaxTokens = Number(parsed.cpuMaxTokens);
+    if (parsed.cpuKeepAlive) config.cpuKeepAlive = parsed.cpuKeepAlive;
     return config;
   } catch {
     return {};
@@ -86,6 +106,13 @@ function parseArgs(argv) {
     else if (arg === "--native-model" && next) config.nativeModel = path.resolve(next), i += 1;
     else if (arg === "--native-max-tokens" && next) config.nativeMaxTokens = Number(next), i += 1;
     else if (arg === "--native-timeout-ms" && next) config.nativeTimeoutMs = Number(next), i += 1;
+    else if (arg === "--cpu-profile" && next) config.cpuProfile = next, i += 1;
+    else if (arg === "--cpu-threads" && next) config.cpuThreads = Number(next), i += 1;
+    else if (arg === "--cpu-batch" && next) config.cpuBatch = Number(next), i += 1;
+    else if (arg === "--cpu-ctx" && next) config.cpuInteractiveCtx = Number(next), i += 1;
+    else if (arg === "--cpu-max-tokens" && next) config.cpuMaxTokens = Number(next), i += 1;
+    else if (arg === "--cpu-keep-alive" && next) config.cpuKeepAlive = next, i += 1;
+    else if (arg === "--allow-gpu") config.cpuOnly = false;
     else if (arg === "--help" || arg === "-h") return { command: "help", config };
   }
 
@@ -100,9 +127,19 @@ function parseArgs(argv) {
   config.nativeModel = process.env.IRONMIND_NATIVE_MODEL || config.nativeModel;
   config.nativeMaxTokens = Number(process.env.IRONMIND_NATIVE_MAX_TOKENS || config.nativeMaxTokens);
   config.nativeTimeoutMs = Number(process.env.IRONMIND_NATIVE_TIMEOUT_MS || config.nativeTimeoutMs);
+  config.cpuOnly = process.env.IRONMIND_CPU_ONLY === undefined
+    ? config.cpuOnly
+    : !["0", "false", "no", "off"].includes(String(process.env.IRONMIND_CPU_ONLY).toLowerCase());
+  config.cpuProfile = process.env.IRONMIND_CPU_PROFILE || config.cpuProfile;
+  config.cpuThreads = Number(process.env.IRONMIND_CPU_THREADS || config.cpuThreads);
+  config.cpuBatch = Number(process.env.IRONMIND_CPU_BATCH || config.cpuBatch);
+  config.cpuInteractiveCtx = Number(process.env.IRONMIND_CPU_CTX || config.cpuInteractiveCtx);
+  config.cpuMaxTokens = Number(process.env.IRONMIND_CPU_MAX_TOKENS || config.cpuMaxTokens);
+  config.cpuKeepAlive = process.env.IRONMIND_CPU_KEEP_ALIVE || config.cpuKeepAlive;
   if (config.nativeModel) config.nativeModel = path.resolve(config.nativeModel);
   config.ollamaUrl = config.ollamaUrl.replace(/\/+$/, "");
   if (!["auto", "ollama", "native"].includes(config.backend)) config.backend = "auto";
+  Object.assign(config, resolveCpuPerformanceConfig(config));
   return { command, config };
 }
 
@@ -114,6 +151,8 @@ Usage:
            [--kv-disk-dir ~/.ironmind/kvcache] [--kv-disk-space-mb 16384]
            [--backend auto|ollama|native] [--native-model C:\\path\\to\\model.gguf]
            [--native-max-tokens 16] [--native-timeout-ms 300000]
+           [--cpu-profile low-latency|balanced|full-context] [--cpu-threads N]
+           [--cpu-batch N] [--cpu-ctx N] [--cpu-max-tokens N] [--cpu-keep-alive 30m]
   ironmind doctor
   ironmind inspect <model.gguf>
   ironmind tokenize <model.gguf> <text>
@@ -131,6 +170,13 @@ Environment:
   IRONMIND_NATIVE_MODEL
   IRONMIND_NATIVE_MAX_TOKENS
   IRONMIND_NATIVE_TIMEOUT_MS
+  IRONMIND_CPU_ONLY
+  IRONMIND_CPU_PROFILE
+  IRONMIND_CPU_THREADS
+  IRONMIND_CPU_BATCH
+  IRONMIND_CPU_CTX
+  IRONMIND_CPU_MAX_TOKENS
+  IRONMIND_CPU_KEEP_ALIVE
 `);
 }
 
@@ -163,11 +209,12 @@ async function readJson(req) {
 }
 
 function normalizeChatPayload(config, body = {}) {
+  const messages = ensureCpuSystemMessage(canonicalizeMessages(body.messages || []));
   return {
     ...body,
     model: body.model || config.model,
     ctx: Number(body.ctx || config.ctx),
-    messages: canonicalizeMessages(body.messages || []),
+    messages,
     tools: canonicalizeTools(body.tools || [])
   };
 }
@@ -223,14 +270,7 @@ async function serveStatic(req, res) {
 }
 
 async function ollamaChat(config, payload, stream) {
-  const options = {
-    ...(payload.options || {}),
-    num_ctx: Number(payload.ctx || config.ctx)
-  };
-  if (payload.temperature !== undefined) options.temperature = payload.temperature;
-  if (payload.top_p !== undefined) options.top_p = payload.top_p;
-  if (payload.max_tokens !== undefined) options.num_predict = Number(payload.max_tokens);
-  if (payload.max_completion_tokens !== undefined) options.num_predict = Number(payload.max_completion_tokens);
+  const { options, keepAlive } = applyCpuPerformanceOptions(config, payload);
   const think = payload.think ?? Boolean(payload.reasoning || payload.reasoning_effort);
 
   const response = await fetch(`${config.ollamaUrl}/api/chat`, {
@@ -242,6 +282,7 @@ async function ollamaChat(config, payload, stream) {
       tools: payload.tools,
       stream,
       think,
+      keep_alive: keepAlive,
       options
     })
   });
@@ -332,6 +373,13 @@ async function handleUiChat(req, res, config) {
           model: chunk.model,
           promptEvalCount: chunk.prompt_eval_count,
           evalCount: chunk.eval_count,
+          totalDurationMs: chunk.total_duration ? Math.round(chunk.total_duration / 1e6) : null,
+          loadDurationMs: chunk.load_duration ? Math.round(chunk.load_duration / 1e6) : null,
+          promptEvalDurationMs: chunk.prompt_eval_duration ? Math.round(chunk.prompt_eval_duration / 1e6) : null,
+          evalDurationMs: chunk.eval_duration ? Math.round(chunk.eval_duration / 1e6) : null,
+          tokensPerSecond: chunk.eval_duration && chunk.eval_count
+            ? Math.round((chunk.eval_count / (chunk.eval_duration / 1e9)) * 10) / 10
+            : null,
           contextSnapshot
         }) + "\n");
       }
@@ -667,6 +715,7 @@ function createServer(config) {
         context: config.ctx,
         backend: backendDescription(config),
         backendMode: config.backend,
+        cpuPerformance: resolveCpuPerformanceConfig(config),
         nativeModel: config.nativeModel || null,
         nativeCandidate: nativeModelPath(config, { model: config.model }),
         nativeMaxTokens: config.nativeMaxTokens,
@@ -722,6 +771,9 @@ async function doctor(config) {
   console.log(`  kv cap:  ${config.kvDiskSpaceMb} MB`);
   console.log(`  runtime: ${backendDescription(config)}`);
   console.log(`  ollama:  ${config.ollamaUrl}`);
+  const cpu = resolveCpuPerformanceConfig(config);
+  console.log(`  cpu mode: ${cpu.cpuOnly ? "CPU-only (num_gpu=0)" : "GPU allowed by config"}`);
+  console.log(`  cpu profile: ${cpu.profile}, ctx=${cpu.interactiveContext || "full"}, threads=${cpu.threads}, batch=${cpu.batch}, max_tokens=${cpu.maxTokens}`);
 
   if (shouldUseNativeBackend(config, { model: config.model })) {
     const runner = nativeRunnerPath();
