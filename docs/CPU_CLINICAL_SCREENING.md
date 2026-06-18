@@ -28,6 +28,22 @@ IronMind can contribute the local and efficient compute layer:
 - Human-in-the-loop routing for uncertain, high-risk, or low-quality cases.
 - Audit-ready logs of model version, thresholds, scores, and review decisions.
 
+## Expected Clinical Impacts
+
+After clinical validation and integration with participating medical centres, the
+proposed AI-based solution is intended to:
+
+- improve early detection workflows for cancer and cardiovascular diseases;
+- enhance prioritisation of critical cases and enable faster clinical decision-making;
+- optimize radiology department resources by reducing avoidable workload pressure;
+- support underserved regions through remote, high-quality screening workflows that do
+  not require every site to have on-site specialists at all times;
+- reduce diagnostic delays through integration with existing clinical systems such as
+  PACS, RIS, and EHR.
+
+These impacts depend on validated imaging models, local clinical evaluation,
+human oversight, cybersecurity controls, and workflow adoption by clinical partners.
+
 ## Proposed Architecture
 
 ```text

@@ -61,6 +61,8 @@ The intended output is not a diagnosis. It is a structured screening package:
 
 The first MVP step is available in the local UI as `Clinical Image Triage`: load a PNG, JPEG, or WebP image and IronMind computes CPU-side readiness metrics before any model review.
 
+Expected clinical impact after validation includes earlier cancer and cardiovascular screening support, faster prioritisation of critical cases, lower radiology workload pressure, remote screening support for underserved regions, and reduced delays through PACS/RIS/EHR-oriented workflows.
+
 Image quality gate API:
 
 ```powershell
