@@ -12,7 +12,7 @@ The bootstrap keeps the product surface usable while the native backend is devel
 5. Session and KV-cache manager
 6. Native CPU backend
 
-During pre-alpha, layer 6 can use the built IronMind CPU backend for local GGUF prefill/generation, with the Ollama/llama.cpp-compatible backend still available as the bootstrap fallback.
+During pre-alpha, layer 6 can use the built IronMind CPU backend for local GGUF prefill/generation, with the Ollama/llama.cpp-compatible backend still used for interactive chat unless native mode is explicitly selected.
 
 ## Implemented Foundations
 
@@ -81,7 +81,7 @@ The default budget is `IRONMIND_NATIVE_CACHE_MB=512` with `IRONMIND_NATIVE_CACHE
 10. Add AVX2 and AVX512 kernels where available. Runtime AVX2/AVX512F dot dispatch is in place; Q4_K/Q6_K now use direct quantized dot instead of materializing a full F32 row.
 11. Save RAM KV state into IronKV and restore it across process restarts for 100k+ token sessions. Implemented for the native F32 KV payload and wired into server session snapshots.
 12. Canonicalize and replay tool definitions, assistant tool calls, and tool responses. Implemented for prompt rendering and generated `<tool_call>` extraction.
-13. Route server completions to the IronMind CPU backend when a local GGUF is configured. Implemented with `auto`, `ollama`, and `native` modes.
+13. Route server completions to the IronMind CPU backend when a local GGUF is configured. Implemented with `auto`, `ollama`, and explicit `native` modes; native can discover Ollama GGUF blobs but remains a correctness-first path until prompt prefill and large-matrix reads are optimized.
 
 ## API Surface
 
@@ -97,3 +97,4 @@ Planned:
 
 - disk-backed session switching;
 - long-lived in-process native model residency.
+- fast native prefill/decode suitable for interactive chat.

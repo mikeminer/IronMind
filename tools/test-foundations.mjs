@@ -10,6 +10,7 @@ import { saveContextSnapshot, contextStoreStats } from "../lib/contextStore.mjs"
 import { rmsNorm, applyRoPE, softmax, causalAttention } from "../lib/mathCore.mjs";
 import { tensorSizeBytes } from "../lib/tensorMap.mjs";
 import { canonicalJson, canonicalizeToolCalls, extractToolCallsFromText } from "../lib/toolCalls.mjs";
+import { isGgufModel } from "../lib/nativeBackend.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
@@ -22,6 +23,10 @@ const prompt = renderQwen3Chat([
 assert.equal(prompt, "<|im_start|>system\nYou are IronMind.\n<|im_end|>\n<|im_start|>user\nCiao /no_think<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n");
 
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ironmind-"));
+const extensionlessGguf = path.join(dir, "ollama-blob");
+await fs.writeFile(extensionlessGguf, Buffer.from("GGUF"));
+assert.equal(isGgufModel(extensionlessGguf), true);
+
 const kvPath = path.join(dir, "test.ironkv");
 await writeIronKv(kvPath, {
   modelFingerprint: "abc",

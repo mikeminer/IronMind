@@ -39,7 +39,9 @@ const defaults = {
   kvDiskSpaceMb: 16384,
   ollamaUrl: "http://127.0.0.1:11434",
   backend: "auto",
-  nativeModel: ""
+  nativeModel: "",
+  nativeMaxTokens: 16,
+  nativeTimeoutMs: 300000
 };
 
 function readUserConfig() {
@@ -54,6 +56,8 @@ function readUserConfig() {
     if (parsed.ollamaUrl) config.ollamaUrl = parsed.ollamaUrl;
     if (parsed.backend) config.backend = parsed.backend;
     if (parsed.nativeModel) config.nativeModel = parsed.nativeModel;
+    if (parsed.nativeMaxTokens) config.nativeMaxTokens = Number(parsed.nativeMaxTokens);
+    if (parsed.nativeTimeoutMs) config.nativeTimeoutMs = Number(parsed.nativeTimeoutMs);
     return config;
   } catch {
     return {};
@@ -77,6 +81,8 @@ function parseArgs(argv) {
     else if (arg === "--ollama" && next) config.ollamaUrl = next, i += 1;
     else if (arg === "--backend" && next) config.backend = next, i += 1;
     else if (arg === "--native-model" && next) config.nativeModel = path.resolve(next), i += 1;
+    else if (arg === "--native-max-tokens" && next) config.nativeMaxTokens = Number(next), i += 1;
+    else if (arg === "--native-timeout-ms" && next) config.nativeTimeoutMs = Number(next), i += 1;
     else if (arg === "--help" || arg === "-h") return { command: "help", config };
   }
 
@@ -89,6 +95,8 @@ function parseArgs(argv) {
   config.ollamaUrl = process.env.IRONMIND_OLLAMA_URL || config.ollamaUrl;
   config.backend = process.env.IRONMIND_BACKEND || config.backend;
   config.nativeModel = process.env.IRONMIND_NATIVE_MODEL || config.nativeModel;
+  config.nativeMaxTokens = Number(process.env.IRONMIND_NATIVE_MAX_TOKENS || config.nativeMaxTokens);
+  config.nativeTimeoutMs = Number(process.env.IRONMIND_NATIVE_TIMEOUT_MS || config.nativeTimeoutMs);
   if (config.nativeModel) config.nativeModel = path.resolve(config.nativeModel);
   config.ollamaUrl = config.ollamaUrl.replace(/\/+$/, "");
   if (!["auto", "ollama", "native"].includes(config.backend)) config.backend = "auto";
@@ -102,6 +110,7 @@ Usage:
   ironmind [serve] [--host 127.0.0.1] [--port 4141] [--model qwen3-coder:30b] [--ctx 131072]
            [--kv-disk-dir ~/.ironmind/kvcache] [--kv-disk-space-mb 16384]
            [--backend auto|ollama|native] [--native-model C:\\path\\to\\model.gguf]
+           [--native-max-tokens 16] [--native-timeout-ms 300000]
   ironmind doctor
   ironmind inspect <model.gguf>
   ironmind tokenize <model.gguf> <text>
@@ -117,6 +126,8 @@ Environment:
   IRONMIND_OLLAMA_URL
   IRONMIND_BACKEND
   IRONMIND_NATIVE_MODEL
+  IRONMIND_NATIVE_MAX_TOKENS
+  IRONMIND_NATIVE_TIMEOUT_MS
 `);
 }
 
@@ -627,6 +638,9 @@ function createServer(config) {
         backend: backendDescription(config),
         backendMode: config.backend,
         nativeModel: config.nativeModel || null,
+        nativeCandidate: nativeModelPath(config, { model: config.model }),
+        nativeMaxTokens: config.nativeMaxTokens,
+        nativeTimeoutMs: config.nativeTimeoutMs,
         kvDiskDir: config.kvDiskDir,
         kvDiskSpaceMb: config.kvDiskSpaceMb,
         contextStore: await contextStoreStats(config)

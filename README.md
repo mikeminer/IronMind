@@ -90,7 +90,7 @@ npm run native:test
 
 The `--decode` path is still correctness-first: rows are dequantized into a small work buffer, while dot products use runtime AVX2/AVX512F dispatch and hot tensors use bounded residency.
 `ironmind native` reports the selected SIMD backend and residency stats. On supported x86 CPUs it dispatches to AVX2 or AVX512F at runtime.
-Set `IRONMIND_BACKEND=native` with `IRONMIND_NATIVE_MODEL` to route server completions through the built CPU backend. In `auto` mode, IronMind uses the native path when the selected model is a local `.gguf` and the native runner has been built; otherwise it keeps the Ollama-compatible bootstrap backend.
+Set `IRONMIND_BACKEND=native` with `IRONMIND_NATIVE_MODEL` to route server completions through the built CPU backend. The native path can also discover local Ollama GGUF blobs for the selected model, but it is still correctness-first and slow on large models. In `auto` mode, IronMind uses native only for an explicit GGUF path or configured `nativeModel`; otherwise it keeps the Ollama-compatible backend for interactive chat.
 
 Run the built-in 100-question evaluation suite:
 
