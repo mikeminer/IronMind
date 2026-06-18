@@ -11,6 +11,12 @@ import { rmsNorm, applyRoPE, softmax, causalAttention } from "../lib/mathCore.mj
 import { tensorSizeBytes } from "../lib/tensorMap.mjs";
 import { canonicalJson, canonicalizeToolCalls, extractToolCallsFromText } from "../lib/toolCalls.mjs";
 import { isGgufModel } from "../lib/nativeBackend.mjs";
+import {
+  aggregateModelOutputs,
+  createClinicalTriage,
+  scoreImageQuality,
+  scoreModelAgreement
+} from "../lib/clinicalScoring.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
@@ -26,6 +32,44 @@ const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ironmind-"));
 const extensionlessGguf = path.join(dir, "ollama-blob");
 await fs.writeFile(extensionlessGguf, Buffer.from("GGUF"));
 assert.equal(isGgufModel(extensionlessGguf), true);
+
+assert.equal(scoreImageQuality({ score: 1.2 }), 1);
+assert.ok(scoreImageQuality({
+  resolutionScore: 0.9,
+  contrastScore: 0.8,
+  noiseScore: 0.7,
+  artifactScore: 0.8,
+  modalityFitScore: 0.9
+}) > 0.75);
+assert.ok(scoreModelAgreement([{ riskScore: 0.5 }, { riskScore: 0.52 }, { riskScore: 0.48 }]) > 0.95);
+assert.ok(scoreModelAgreement([{ riskScore: 0.1 }, { riskScore: 0.9 }]) < 0.3);
+
+const aggregate = aggregateModelOutputs([
+  { modelId: "a", riskScore: 0.8, confidenceScore: 0.7, uncertaintyScore: 0.2, weight: 2 },
+  { modelId: "b", riskScore: 0.6, confidenceScore: 0.8, uncertaintyScore: 0.3, weight: 1 }
+]);
+assert.ok(aggregate.riskScore > 0.72 && aggregate.riskScore < 0.74);
+assert.equal(aggregate.modelCount, 2);
+
+const urgentTriage = createClinicalTriage({
+  modality: "xray",
+  bodyRegion: "chest",
+  imageQuality: { score: 0.92 },
+  explainability: { score: 0.7, refs: ["heatmap://case-1"] },
+  modelOutputs: [
+    { modelId: "cxr-risk-a", riskScore: 0.93, confidenceScore: 0.82, uncertaintyScore: 0.18 },
+    { modelId: "cxr-risk-b", riskScore: 0.88, confidenceScore: 0.78, uncertaintyScore: 0.22 }
+  ]
+});
+assert.equal(urgentTriage.humanReviewRequired, true);
+assert.equal(urgentTriage.reviewPriority, "urgent");
+assert.equal(urgentTriage.evidence.modelIds.length, 2);
+
+const lowQualityTriage = createClinicalTriage({
+  imageQuality: { score: 0.2 },
+  modelOutputs: [{ riskScore: 0.2, confidenceScore: 0.9, uncertaintyScore: 0.1 }]
+});
+assert.equal(lowQualityTriage.recommendation, "repeat_or_manual_image_review");
 
 const kvPath = path.join(dir, "test.ironkv");
 await writeIronKv(kvPath, {

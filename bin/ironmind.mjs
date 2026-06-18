@@ -24,6 +24,7 @@ import {
   shouldUseNativeBackend
 } from "../lib/nativeBackend.mjs";
 import { canonicalizeMessages, canonicalizeTools, canonicalizeToolCalls } from "../lib/toolCalls.mjs";
+import { createClinicalTriage } from "../lib/clinicalScoring.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
@@ -612,6 +613,15 @@ async function handleAnthropicMessages(req, res, config) {
   }
 }
 
+async function handleClinicalTriage(req, res) {
+  try {
+    const body = await readJson(req);
+    return json(res, 200, createClinicalTriage(body, { thresholds: body.thresholds }));
+  } catch (error) {
+    json(res, 400, { error: { message: error.message, type: "invalid_clinical_triage_request" } });
+  }
+}
+
 function handleModels(res, config) {
   json(res, 200, {
     object: "list",
@@ -665,6 +675,10 @@ function createServer(config) {
 
     if (req.method === "POST" && url.pathname === "/v1/messages") {
       return handleAnthropicMessages(req, res, config);
+    }
+
+    if (req.method === "POST" && url.pathname === "/v1/clinical/triage") {
+      return handleClinicalTriage(req, res);
     }
 
     if (req.method === "GET") return serveStatic(req, res);

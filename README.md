@@ -111,6 +111,8 @@ curl http://127.0.0.1:4141/v1/chat/completions `
 
 The bootstrap intentionally keeps the API, UI, session model, and model target stable while the native CPU core is built.
 
+For the CPU-only clinical screening direction, see `docs/CPU_CLINICAL_SCREENING.md`.
+
 Planned core milestones:
 
 1. GGUF metadata reader for the selected target model. Implemented as `ironmind inspect` and native `ironmind-inspect`.
