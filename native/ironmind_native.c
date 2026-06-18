@@ -145,6 +145,168 @@ static int native_decode(const char * path, uint32_t token_id, uint32_t ctx) {
     return 0;
 }
 
+typedef struct token_list {
+    uint32_t * data;
+    size_t count;
+} token_list;
+
+static void token_list_free(token_list * list) {
+    if (!list) return;
+    free(list->data);
+    list->data = NULL;
+    list->count = 0;
+}
+
+static int parse_token_csv(const char * text, token_list * out) {
+    if (!text || !out) return -1;
+    memset(out, 0, sizeof(*out));
+    size_t cap = 16;
+    out->data = (uint32_t *)malloc(cap * sizeof(uint32_t));
+    if (!out->data) return -1;
+
+    const char * p = text;
+    while (*p) {
+        while (*p == ',' || *p == ' ' || *p == '\n' || *p == '\r' || *p == '\t') p++;
+        if (!*p) break;
+        char * end = NULL;
+        const unsigned long value = strtoul(p, &end, 10);
+        if (end == p || value > UINT32_MAX) {
+            token_list_free(out);
+            return -1;
+        }
+        if (out->count == cap) {
+            cap *= 2u;
+            uint32_t * next = (uint32_t *)realloc(out->data, cap * sizeof(uint32_t));
+            if (!next) {
+                token_list_free(out);
+                return -1;
+            }
+            out->data = next;
+        }
+        out->data[out->count++] = (uint32_t)value;
+        p = end;
+    }
+
+    if (!out->count) {
+        token_list_free(out);
+        return -1;
+    }
+    return 0;
+}
+
+static char * read_text_file(const char * path) {
+    FILE * file = fopen(path, "rb");
+    if (!file) return NULL;
+    if (fseek(file, 0, SEEK_END) != 0) {
+        fclose(file);
+        return NULL;
+    }
+    const long n = ftell(file);
+    if (n < 0) {
+        fclose(file);
+        return NULL;
+    }
+    rewind(file);
+    char * out = (char *)malloc((size_t)n + 1u);
+    if (!out) {
+        fclose(file);
+        return NULL;
+    }
+    if (fread(out, 1, (size_t)n, file) != (size_t)n) {
+        free(out);
+        fclose(file);
+        return NULL;
+    }
+    out[n] = '\0';
+    fclose(file);
+    return out;
+}
+
+static void print_token_json(const uint32_t * tokens, uint32_t count) {
+    printf("[");
+    for (uint32_t i = 0; i < count; i++) {
+        if (i) printf(",");
+        printf("%u", tokens[i]);
+    }
+    printf("]");
+}
+
+static int native_generate(const char * path, const token_list * prompt, uint32_t generate, uint32_t ctx, const char * save_kv, int as_json) {
+    if (!prompt || !prompt->count || !generate) {
+        fprintf(stderr, "error: --tokens/--tokens-file and --generate are required\n");
+        return 2;
+    }
+
+    im_qwen3_model model;
+    if (im_qwen3_model_load(&model, path, ctx) != 0) {
+        fprintf(stderr, "error: model is not ready for native Qwen3 decode\n");
+        return 1;
+    }
+    im_kv_cache cache;
+    if (im_kv_cache_init(&cache, &model.cfg) != 0) {
+        im_qwen3_model_free(&model);
+        fprintf(stderr, "error: cannot allocate KV cache\n");
+        return 1;
+    }
+    float * logits = (float *)malloc((size_t)model.cfg.n_vocab * sizeof(float));
+    uint32_t * out = (uint32_t *)calloc((size_t)generate, sizeof(uint32_t));
+    if (!logits || !out) {
+        free(logits);
+        free(out);
+        im_kv_cache_free(&cache);
+        im_qwen3_model_free(&model);
+        fprintf(stderr, "error: cannot allocate generation buffers\n");
+        return 1;
+    }
+
+    int ok = 1;
+    for (size_t i = 0; i < prompt->count; i++) {
+        if (im_qwen3_decode(&model, &cache, prompt->data[i], logits) != 0) {
+            ok = 0;
+            break;
+        }
+    }
+
+    uint32_t produced = 0;
+    while (ok && produced < generate && cache.token_count < model.cfg.max_seq) {
+        const uint32_t next = im_qwen3_argmax(logits, model.cfg.n_vocab);
+        out[produced++] = next;
+        if (im_qwen3_decode(&model, &cache, next, logits) != 0) {
+            ok = 0;
+            break;
+        }
+    }
+
+    if (ok && save_kv && im_kv_cache_save(&cache, save_kv) != 0) {
+        fprintf(stderr, "error: cannot save native KV payload\n");
+        ok = 0;
+    }
+
+    if (ok) {
+        if (as_json) {
+            printf("{\"promptTokens\":%zu,\"generatedTokens\":%u,\"kvTokens\":%u,\"simdBackend\":\"%s\","
+                   "\"residencyUsedMb\":%" PRIu64 ",\"residencyEntries\":%" PRIu64 ",\"tokenIds\":",
+                   prompt->count,
+                   produced,
+                   cache.token_count,
+                   im_simd_backend_name(im_simd_selected_backend()),
+                   im_gguf_residency_used(&model.gguf) / (1024u * 1024u),
+                   im_gguf_residency_entries(&model.gguf));
+            print_token_json(out, produced);
+            printf("}\n");
+        } else {
+            print_token_json(out, produced);
+            printf("\n");
+        }
+    }
+
+    free(logits);
+    free(out);
+    im_kv_cache_free(&cache);
+    im_qwen3_model_free(&model);
+    return ok ? 0 : 1;
+}
+
 static uint32_t parse_u32(const char * s, uint32_t fallback) {
     char * end = NULL;
     const unsigned long v = strtoul(s, &end, 10);
@@ -152,14 +314,64 @@ static uint32_t parse_u32(const char * s, uint32_t fallback) {
 }
 
 int main(int argc, char ** argv) {
-    if (argc != 2 && argc != 4 && argc != 6) {
-        fprintf(stderr, "usage: ironmind-native <model.gguf> [--decode TOKEN] [--ctx N]\n");
+    if (argc < 2) {
+        fprintf(stderr, "usage: ironmind-native <model.gguf> [--decode TOKEN] [--tokens CSV|--tokens-file PATH --generate N] [--ctx N] [--json] [--save-kv PATH]\n");
         return 2;
     }
-    if (argc >= 4 && strcmp(argv[2], "--decode") == 0) {
-        uint32_t ctx = 1;
-        if (argc == 6 && strcmp(argv[4], "--ctx") == 0) ctx = parse_u32(argv[5], 1);
-        return native_decode(argv[1], parse_u32(argv[3], 0), ctx);
+
+    const char * tokens_text = NULL;
+    const char * tokens_file = NULL;
+    const char * save_kv = NULL;
+    uint32_t decode_token = 0;
+    uint32_t generate = 0;
+    uint32_t ctx = 1;
+    int do_decode = 0;
+    int as_json = 0;
+
+    for (int i = 2; i < argc; i++) {
+        if (strcmp(argv[i], "--decode") == 0 && i + 1 < argc) {
+            do_decode = 1;
+            decode_token = parse_u32(argv[++i], 0);
+        } else if (strcmp(argv[i], "--tokens") == 0 && i + 1 < argc) {
+            tokens_text = argv[++i];
+        } else if (strcmp(argv[i], "--tokens-file") == 0 && i + 1 < argc) {
+            tokens_file = argv[++i];
+        } else if (strcmp(argv[i], "--generate") == 0 && i + 1 < argc) {
+            generate = parse_u32(argv[++i], 0);
+        } else if (strcmp(argv[i], "--ctx") == 0 && i + 1 < argc) {
+            ctx = parse_u32(argv[++i], 1);
+        } else if (strcmp(argv[i], "--save-kv") == 0 && i + 1 < argc) {
+            save_kv = argv[++i];
+        } else if (strcmp(argv[i], "--json") == 0) {
+            as_json = 1;
+        } else {
+            fprintf(stderr, "usage: ironmind-native <model.gguf> [--decode TOKEN] [--tokens CSV|--tokens-file PATH --generate N] [--ctx N] [--json] [--save-kv PATH]\n");
+            return 2;
+        }
+    }
+
+    if (do_decode) return native_decode(argv[1], decode_token, ctx);
+
+    if (tokens_text || tokens_file) {
+        char * file_text = NULL;
+        if (tokens_file) {
+            file_text = read_text_file(tokens_file);
+            if (!file_text) {
+                fprintf(stderr, "error: cannot read tokens file\n");
+                return 1;
+            }
+            tokens_text = file_text;
+        }
+        token_list prompt;
+        if (parse_token_csv(tokens_text, &prompt) != 0) {
+            free(file_text);
+            fprintf(stderr, "error: invalid token list\n");
+            return 2;
+        }
+        const int rc = native_generate(argv[1], &prompt, generate, ctx, save_kv, as_json);
+        token_list_free(&prompt);
+        free(file_text);
+        return rc;
     }
     return native_probe(argv[1]);
 }

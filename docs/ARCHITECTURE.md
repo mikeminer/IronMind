@@ -12,13 +12,14 @@ The bootstrap keeps the product surface usable while the native backend is devel
 5. Session and KV-cache manager
 6. Native CPU backend
 
-During pre-alpha, layer 6 is represented by an Ollama/llama.cpp-compatible local backend.
+During pre-alpha, layer 6 can use the built IronMind CPU backend for local GGUF prefill/generation, with the Ollama/llama.cpp-compatible backend still used for interactive chat unless native mode is explicitly selected.
 
 ## Implemented Foundations
 
 - GGUF metadata and tensor-directory inspector: `lib/gguf.mjs`.
 - Qwen3/Qwen3MoE target validator: `lib/target.mjs`.
 - Qwen3 chat/tool prompt renderer: `lib/qwen3Prompt.mjs`.
+- Deterministic tool-call canonicalization and replay: `lib/toolCalls.mjs`.
 - Qwen3 GGUF tokenizer loader and BPE tokenizer: `lib/tokenizer.mjs`.
 - Dense Qwen3/Qwen3MoE tensor mapping: `lib/tensorMap.mjs`.
 - Native GGUF tensor loader and tensor data reader: `native/ironmind_gguf.c`.
@@ -29,8 +30,9 @@ During pre-alpha, layer 6 is represented by an Ollama/llama.cpp-compatible local
 - GGUF-backed Qwen3 decode wiring: `native/ironmind_qwen3.c`.
 - RMSNorm, RoPE, softmax, and attention reference kernels: `lib/mathCore.mjs` and `native/ironmind_math.c`.
 - Native F32 dense decode step with RAM KV save/restore: `native/ironmind_forward.c`.
-- IronKV disk-cache container: `lib/ironkv.mjs`.
-- Persistent disk context snapshots: `lib/contextStore.mjs`.
+- IronKV disk-cache container with native payload support: `lib/ironkv.mjs` and `native/ironmind_forward.c`.
+- Persistent disk context snapshots with `.ironctx.json` sidecars and `.ironkv` payload files: `lib/contextStore.mjs`.
+- Server-side native backend selector and runner adapter: `lib/nativeBackend.mjs`.
 
 The native pieces now load real GGUF tensor views, validate supported quantized matvec formats, route MoE experts, decode through GGUF-backed Qwen3 tensors, and compare logits/token argmax against the F32 reference path.
 
@@ -77,7 +79,9 @@ The default budget is `IRONMIND_NATIVE_CACHE_MB=512` with `IRONMIND_NATIVE_CACHE
 8. Wire GGUF tensor views into the native forward pass and emit real logits. Dense and MoE Qwen3 wiring is in place.
 9. Add logit/token-vector regression tests. A tiny GGUF fixture compares GGUF-backed logits/token argmax against the F32 reference path.
 10. Add AVX2 and AVX512 kernels where available. Runtime AVX2/AVX512F dot dispatch is in place; Q4_K/Q6_K now use direct quantized dot instead of materializing a full F32 row.
-11. Save RAM KV state into IronKV and restore it across process restarts for 100k+ token sessions.
+11. Save RAM KV state into IronKV and restore it across process restarts for 100k+ token sessions. Implemented for the native F32 KV payload and wired into server session snapshots.
+12. Canonicalize and replay tool definitions, assistant tool calls, and tool responses. Implemented for prompt rendering and generated `<tool_call>` extraction.
+13. Route server completions to the IronMind CPU backend when a local GGUF is configured. Implemented with `auto`, `ollama`, and explicit `native` modes; native can discover Ollama GGUF blobs but remains a correctness-first path until prompt prefill and large-matrix reads are optimized.
 
 ## API Surface
 
@@ -86,10 +90,11 @@ Initial:
 - `GET /v1/models`
 - `POST /v1/chat/completions`
 - `POST /api/chat`
+- `POST /v1/responses`
+- `POST /v1/messages`
 
 Planned:
 
-- `POST /v1/responses`
-- `POST /v1/messages`
 - disk-backed session switching;
-- exact tool replay.
+- long-lived in-process native model residency.
+- fast native prefill/decode suitable for interactive chat.

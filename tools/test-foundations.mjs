@@ -5,10 +5,12 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderQwen3Chat } from "../lib/qwen3Prompt.mjs";
-import { writeIronKv, readIronKv } from "../lib/ironkv.mjs";
+import { writeIronKv, readIronKv, readIronKvPayload } from "../lib/ironkv.mjs";
 import { saveContextSnapshot, contextStoreStats } from "../lib/contextStore.mjs";
 import { rmsNorm, applyRoPE, softmax, causalAttention } from "../lib/mathCore.mjs";
 import { tensorSizeBytes } from "../lib/tensorMap.mjs";
+import { canonicalJson, canonicalizeToolCalls, extractToolCallsFromText } from "../lib/toolCalls.mjs";
+import { isGgufModel } from "../lib/nativeBackend.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
@@ -21,6 +23,10 @@ const prompt = renderQwen3Chat([
 assert.equal(prompt, "<|im_start|>system\nYou are IronMind.\n<|im_end|>\n<|im_start|>user\nCiao /no_think<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n");
 
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ironmind-"));
+const extensionlessGguf = path.join(dir, "ollama-blob");
+await fs.writeFile(extensionlessGguf, Buffer.from("GGUF"));
+assert.equal(isGgufModel(extensionlessGguf), true);
+
 const kvPath = path.join(dir, "test.ironkv");
 await writeIronKv(kvPath, {
   modelFingerprint: "abc",
@@ -32,6 +38,28 @@ const kv = await readIronKv(kvPath);
 assert.equal(kv.header.modelFingerprint, "abc");
 assert.equal(kv.header.tokenCount, 3);
 assert.equal(kv.payloadLength, 4);
+const kvPayload = await readIronKvPayload(kvPath);
+assert.deepEqual([...kvPayload.payload], [1, 2, 3, 4]);
+
+assert.equal(canonicalJson({ b: 2, a: { d: 4, c: 3 } }), '{"a":{"c":3,"d":4},"b":2}');
+const toolCalls = canonicalizeToolCalls([
+  { function: { name: "search", arguments: "{\"b\":2,\"a\":1}" } }
+]);
+assert.equal(toolCalls[0].function.arguments, '{"a":1,"b":2}');
+const generatedTool = extractToolCallsFromText('ok\n<tool_call>\n{"arguments":{"z":1,"a":2},"name":"lookup"}\n</tool_call>');
+assert.equal(generatedTool.content, "ok");
+assert.equal(generatedTool.tool_calls[0].function.arguments, '{"a":2,"z":1}');
+
+const toolPrompt = renderQwen3Chat([
+  { role: "user", content: "Find it" },
+  { role: "assistant", content: "", tool_calls: [{ function: { name: "lookup", arguments: { b: 2, a: 1 } } }] },
+  { role: "tool", tool_call_id: "call_1", name: "lookup", content: "done" }
+], {
+  tools: [{ function: { name: "lookup", parameters: { type: "object", properties: { b: { type: "number" }, a: { type: "number" } } } } }],
+  think: false
+});
+assert.ok(toolPrompt.includes('{"arguments":{"a":1,"b":2},"name":"lookup"}'));
+assert.ok(toolPrompt.includes('{"content":"done","name":"lookup","tool_call_id":"call_1"}'));
 
 const context = await saveContextSnapshot({
   model: "qwen3-coder:30b",
@@ -44,6 +72,10 @@ const context = await saveContextSnapshot({
 });
 assert.equal(context.nativeKvPayload, false);
 assert.ok(context.estimatedTokens > 0);
+assert.ok(context.ironKvPath.endsWith(".ironkv"));
+const contextKv = await readIronKv(context.ironKvPath);
+assert.equal(contextKv.header.kind, "ironmind.session");
+assert.equal(contextKv.payloadLength, 0);
 
 const stats = await contextStoreStats({
   kvDiskDir: path.join(dir, "kvcache"),

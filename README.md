@@ -53,6 +53,8 @@ IRONMIND_KV_DISK_DIR=C:\IronMindKV
 IRONMIND_KV_DISK_SPACE_MB=16384
 IRONMIND_PORT=4141
 IRONMIND_OLLAMA_URL=http://127.0.0.1:11434
+IRONMIND_BACKEND=auto
+IRONMIND_NATIVE_MODEL=C:\path\to\model.gguf
 IRONMIND_NATIVE_CACHE_MB=512
 IRONMIND_NATIVE_CACHE_MAX_TENSOR_MB=64
 ```
@@ -88,6 +90,7 @@ npm run native:test
 
 The `--decode` path is still correctness-first: rows are dequantized into a small work buffer, while dot products use runtime AVX2/AVX512F dispatch and hot tensors use bounded residency.
 `ironmind native` reports the selected SIMD backend and residency stats. On supported x86 CPUs it dispatches to AVX2 or AVX512F at runtime.
+Set `IRONMIND_BACKEND=native` with `IRONMIND_NATIVE_MODEL` to route server completions through the built CPU backend. The native path can also discover local Ollama GGUF blobs for the selected model, but it is still correctness-first and slow on large models. In `auto` mode, IronMind uses native only for an explicit GGUF path or configured `nativeModel`; otherwise it keeps the Ollama-compatible backend for interactive chat.
 
 Run the built-in 100-question evaluation suite:
 
@@ -123,9 +126,9 @@ Planned core milestones:
 11. GGUF-backed Qwen3 decode wiring. Implemented in `native/ironmind_qwen3.c`.
 12. Logit/token reference comparison. Implemented in `native/ironmind_qwen3_test.c`.
 13. Evaluation suite for physics, mathematics, and defensive security. Implemented as IronMind Eval 100.
-14. Native IronKV payload integration for full server sessions.
-15. Native tool-call replay and canonicalization.
-16. Replace the bootstrap runtime path with the IronMind CPU backend once full-token decode is fast enough for interactive use.
+14. Native IronKV payload integration for full server sessions. Implemented with `IRONKV1` session files, JSON sidecars, and native KV save/restore payloads.
+15. Native tool-call replay and canonicalization. Implemented with deterministic tool schemas, assistant tool-call replay, tool-response rendering, and generated `<tool_call>` extraction.
+16. Replace the bootstrap runtime path with the IronMind CPU backend once full-token decode is fast enough for interactive use. Implemented as an `auto|ollama|native` backend selector with native GGUF prefill/generation and Ollama fallback.
 
 ## License
 

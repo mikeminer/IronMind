@@ -12,7 +12,7 @@ const thinkEl = document.querySelector("#think");
 const messages = [
   {
     role: "assistant",
-    content: "IronMind is ready. Start Ollama and pull qwen3-coder:30b if the backend is not loaded yet."
+    content: "IronMind is checking the local backend."
   }
 ];
 
@@ -140,6 +140,10 @@ async function loadHealth() {
     modelEl.value = health.model;
     ctxEl.value = health.context;
     kvDiskEl.value = health.kvDiskDir;
+    if (messages.length === 1 && messages[0].role === "assistant") {
+      messages[0].content = `IronMind is ready with ${health.model}.`;
+      render();
+    }
     const files = health.contextStore?.files || 0;
     setStatus(`Backend: ${health.backend}; disk context files=${files}`);
   } catch {
