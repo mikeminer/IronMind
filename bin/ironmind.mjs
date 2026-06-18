@@ -25,6 +25,7 @@ import {
 } from "../lib/nativeBackend.mjs";
 import { canonicalizeMessages, canonicalizeTools, canonicalizeToolCalls } from "../lib/toolCalls.mjs";
 import { createClinicalTriage } from "../lib/clinicalScoring.mjs";
+import { assessImageQuality } from "../lib/imageQuality.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
@@ -622,6 +623,15 @@ async function handleClinicalTriage(req, res) {
   }
 }
 
+async function handleClinicalImageQuality(req, res) {
+  try {
+    const body = await readJson(req);
+    return json(res, 200, assessImageQuality(body, body.options || {}));
+  } catch (error) {
+    json(res, 400, { error: { message: error.message, type: "invalid_image_quality_request" } });
+  }
+}
+
 function handleModels(res, config) {
   json(res, 200, {
     object: "list",
@@ -679,6 +689,10 @@ function createServer(config) {
 
     if (req.method === "POST" && url.pathname === "/v1/clinical/triage") {
       return handleClinicalTriage(req, res);
+    }
+
+    if (req.method === "POST" && url.pathname === "/v1/clinical/image/quality") {
+      return handleClinicalImageQuality(req, res);
     }
 
     if (req.method === "GET") return serveStatic(req, res);

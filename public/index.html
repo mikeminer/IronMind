@@ -42,6 +42,62 @@
       </aside>
 
       <section class="chat">
+        <section class="clinical" aria-label="Clinical image triage">
+          <div class="clinical-head">
+            <div>
+              <h2>Clinical Image Triage</h2>
+              <p>CPU-ready quality gate</p>
+            </div>
+            <label class="file-pick">
+              <span>Image</span>
+              <input id="clinicalFile" type="file" accept="image/png,image/jpeg,image/webp">
+            </label>
+          </div>
+
+          <div class="clinical-grid">
+            <div class="clinical-preview">
+              <img id="clinicalPreview" alt="">
+              <span id="clinicalPreviewEmpty">No image loaded</span>
+            </div>
+            <div class="clinical-controls">
+              <label>
+                Modality
+                <select id="clinicalModality">
+                  <option value="xray">X-ray</option>
+                  <option value="ct">CT</option>
+                  <option value="mri">MRI</option>
+                  <option value="ultrasound">Ultrasound</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+              <label>
+                Body region
+                <input id="clinicalRegion" value="chest" autocomplete="off">
+              </label>
+              <button id="clinicalAnalyze" type="button" disabled>Analyze</button>
+            </div>
+            <div class="clinical-result" id="clinicalResult">
+              <div class="metric">
+                <span>Quality</span>
+                <strong id="qualityScore">-</strong>
+              </div>
+              <div class="metric">
+                <span>Readiness</span>
+                <strong id="qualityReadiness">-</strong>
+              </div>
+              <div class="metric">
+                <span>Resolution</span>
+                <strong id="resolutionScore">-</strong>
+              </div>
+              <div class="metric">
+                <span>Sharpness</span>
+                <strong id="sharpnessScore">-</strong>
+              </div>
+              <div class="quality-reasons" id="qualityReasons">Awaiting image.</div>
+            </div>
+          </div>
+        </section>
+
         <div id="messages" class="messages"></div>
         <form id="composer" class="composer">
           <textarea id="prompt" rows="3" placeholder="Ask IronMind..." autofocus></textarea>

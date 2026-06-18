@@ -17,6 +17,7 @@ import {
   scoreImageQuality,
   scoreModelAgreement
 } from "../lib/clinicalScoring.mjs";
+import { assessImageQuality, scoreResolution } from "../lib/imageQuality.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
@@ -32,6 +33,44 @@ const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ironmind-"));
 const extensionlessGguf = path.join(dir, "ollama-blob");
 await fs.writeFile(extensionlessGguf, Buffer.from("GGUF"));
 assert.equal(isGgufModel(extensionlessGguf), true);
+
+assert.equal(scoreResolution(1024, 1024), 1);
+const highQualityImage = assessImageQuality({
+  fileName: "case.png",
+  mimeType: "image/png",
+  modality: "xray",
+  bodyRegion: "chest",
+  width: 1600,
+  height: 1400,
+  pixelStats: {
+    lumaMean: 126,
+    lumaStdDev: 58,
+    laplacianMean: 24,
+    highFrequencyNoise: 0.08,
+    saturationRatio: 0.01,
+    darkRatio: 0.01,
+    brightRatio: 0.01
+  }
+});
+assert.equal(highQualityImage.screeningReadiness, "ready_for_model_review");
+assert.equal(highQualityImage.humanReviewRequired, false);
+assert.ok(highQualityImage.clinicalTriageImageQuality.score > 0.8);
+
+const lowQualityImage = assessImageQuality({
+  width: 320,
+  height: 240,
+  pixelStats: {
+    lumaMean: 20,
+    lumaStdDev: 8,
+    laplacianMean: 2,
+    highFrequencyNoise: 0.75,
+    saturationRatio: 0.2,
+    darkRatio: 0.4,
+    brightRatio: 0
+  }
+});
+assert.equal(lowQualityImage.screeningReadiness, "repeat_or_manual_image_review");
+assert.equal(lowQualityImage.humanReviewRequired, true);
 
 assert.equal(scoreImageQuality({ score: 1.2 }), 1);
 assert.ok(scoreImageQuality({

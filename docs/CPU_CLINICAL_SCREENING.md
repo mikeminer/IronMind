@@ -59,9 +59,46 @@ Human review routing
 Clinician feedback and post-deployment monitoring
 ```
 
-## Scoring Contract
+## Implemented MVP Slice
 
-The first reusable contract is implemented in `lib/clinicalScoring.mjs` and exposed
+The first practical MVP slice is an image-quality gate for screening readiness:
+
+- browser upload for PNG, JPEG, and WebP images in the local IronMind UI;
+- client-side extraction of resolution, exposure, contrast, blur, noise, clipping, and missing-pixel indicators;
+- `POST /v1/clinical/image/quality` to normalize those metrics into a quality score;
+- explicit `ready_for_model_review` versus `repeat_or_manual_image_review` routing;
+- human review required when quality is too low or ambiguous.
+
+This deliberately avoids making a clinical diagnosis. It proves the controllable
+workflow needed before routing an image into validated medical imaging models.
+
+## Scoring Contracts
+
+The image-quality contract is implemented in `lib/imageQuality.mjs` and exposed
+through `POST /v1/clinical/image/quality`.
+
+Example quality output:
+
+```json
+{
+  "kind": "ironmind.image-quality.v1",
+  "intendedUse": "image_quality_gate_for_screening_triage",
+  "score": 0.91,
+  "screeningReadiness": "ready_for_model_review",
+  "humanReviewRequired": false,
+  "scores": {
+    "resolutionScore": 1,
+    "exposureScore": 0.94,
+    "contrastScore": 0.91,
+    "sharpnessScore": 1,
+    "noiseScore": 0.89,
+    "artifactScore": 0.98,
+    "modalityFitScore": 0.85
+  }
+}
+```
+
+The broader triage contract is implemented in `lib/clinicalScoring.mjs` and exposed
 through `POST /v1/clinical/triage`.
 
 Example output:
@@ -110,9 +147,9 @@ Example request:
    - Next: calibrate thresholds by modality and clinical use case.
 
 2. Medical image input layer
-   - DICOM ingestion.
-   - Image metadata checks.
-   - Quality scoring for resolution, contrast, noise, artifacts, and modality fit.
+   - Implemented browser image upload for standard image files.
+   - Implemented quality scoring for resolution, exposure, contrast, blur, noise, and artifacts.
+   - Next: DICOM ingestion, metadata checks, and modality-specific thresholds.
 
 3. Model adapter layer
    - Wrap existing medical imaging models.
@@ -162,9 +199,10 @@ IronMind alone is not enough for the call. A competitive proposal needs:
 
 ## Near-Term Technical Next Steps
 
-- Add a DICOM-safe ingestion prototype.
+- Add a DICOM-safe ingestion prototype and metadata parser.
 - Define a model adapter interface for medical imaging models.
-- Add a sample triage API endpoint returning the scoring package.
-- Add UI panels for risk, confidence, uncertainty, quality, and review priority.
+- Add one open medical-imaging model adapter as a non-diagnostic demo.
+- Add UI panels for risk, confidence, uncertainty, explainability, and review priority.
+- Add case export and audit logs for proposal demonstrations.
 - Keep CPU-only deployment as a differentiator, while using cloud or GPU only where
   clinically and operationally justified.

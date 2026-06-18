@@ -38,7 +38,7 @@ IronMind is organized around a vertical local stack:
 - Prompt renderer: model-specific chat and tool formatting.
 - Connected chatbot: local browser UI streamed from the IronMind server.
 - OpenAI-compatible API: `/v1/models` and `/v1/chat/completions`.
-- Clinical triage API: `/v1/clinical/triage`.
+- Clinical screening APIs: `/v1/clinical/image/quality` and `/v1/clinical/triage`.
 - Agent path: future `/v1/responses` and Anthropic-compatible `/v1/messages`.
 - KV strategy: RAM session first, disk persistence next.
 - Bench/eval discipline: token throughput, prompt rendering checks, and regression traces.
@@ -47,9 +47,9 @@ IronMind is organized around a vertical local stack:
 
 IronMind can be positioned for medical imaging pilots as a CPU-only, quantized AI screening assistant for triage and decision support.
 
-The clinical path is documented in `docs/CPU_CLINICAL_SCREENING.md` and starts with a reusable scoring contract implemented in `lib/clinicalScoring.mjs`.
+The clinical path is documented in `docs/CPU_CLINICAL_SCREENING.md` and starts with a browser image-quality gate plus a reusable triage scoring contract implemented in `lib/imageQuality.mjs` and `lib/clinicalScoring.mjs`.
 
-The intended output is not a diagnosis. It is a structured triage package:
+The intended output is not a diagnosis. It is a structured screening package:
 
 - image quality score;
 - clinical risk score;
@@ -58,6 +58,16 @@ The intended output is not a diagnosis. It is a structured triage package:
 - model agreement score;
 - explainability score;
 - human review recommendation and priority.
+
+The first MVP step is available in the local UI as `Clinical Image Triage`: load a PNG, JPEG, or WebP image and IronMind computes CPU-side readiness metrics before any model review.
+
+Image quality gate API:
+
+```powershell
+curl http://127.0.0.1:4141/v1/clinical/image/quality `
+  -H "Content-Type: application/json" `
+  -d '{ "fileName": "case.png", "mimeType": "image/png", "modality": "xray", "bodyRegion": "chest", "width": 1600, "height": 1400, "pixelStats": { "lumaMean": 126, "lumaStdDev": 58, "laplacianMean": 24, "highFrequencyNoise": 0.08, "saturationRatio": 0.01, "darkRatio": 0.01, "brightRatio": 0.01 } }'
+```
 
 Example:
 
