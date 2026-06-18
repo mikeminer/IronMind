@@ -1,6 +1,8 @@
 # IronMind
 
-IronMind is a small native CPU inference engine optimized for one local agentic model at a time. It targets ordinary laptops and workstations with 64GB+ RAM, using quantized GGUF weights, RAM/disk KV cache, OpenAI-compatible APIs, and an integrated local chatbot/agent.
+IronMind is a small native CPU inference engine and local AI orchestration layer optimized for one focused model path at a time. It targets ordinary laptops and workstations with 64GB+ RAM, using quantized GGUF weights, RAM/disk KV cache, OpenAI-compatible APIs, and an integrated local chatbot/agent.
+
+The current strategic direction includes CPU-efficient clinical imaging triage: using local, quantized inference and model orchestration to support early screening workflows in resource-limited medical centres.
 
 > Status: pre-alpha. The current bootstrap ships the server, chatbot, installer, and API shape while the native CPU engine is developed. For usable inference today it connects to a local Ollama or llama.cpp-compatible runtime.
 
@@ -26,6 +28,8 @@ The context target is 100k+ tokens, with RAM used for the active working set and
 
 The first recommended target is `qwen3-coder:30b` because it is useful for coding agents, has a practical memory footprint, and gives IronMind a narrow model path to optimize around.
 
+For clinical screening, the value proposition is different: IronMind is the CPU-first orchestration and triage layer around specialised medical imaging models. It is intended to prioritise cases for human review, not to replace clinical judgement.
+
 ## Design
 
 IronMind is organized around a vertical local stack:
@@ -34,9 +38,56 @@ IronMind is organized around a vertical local stack:
 - Prompt renderer: model-specific chat and tool formatting.
 - Connected chatbot: local browser UI streamed from the IronMind server.
 - OpenAI-compatible API: `/v1/models` and `/v1/chat/completions`.
+- Clinical triage API: `/v1/clinical/triage`.
 - Agent path: future `/v1/responses` and Anthropic-compatible `/v1/messages`.
 - KV strategy: RAM session first, disk persistence next.
 - Bench/eval discipline: token throughput, prompt rendering checks, and regression traces.
+
+## CPU Clinical Screening
+
+IronMind can be positioned for medical imaging pilots as a CPU-only, quantized AI screening assistant for triage and decision support.
+
+The clinical path is documented in `docs/CPU_CLINICAL_SCREENING.md` and starts with a reusable scoring contract implemented in `lib/clinicalScoring.mjs`.
+
+The intended output is not a diagnosis. It is a structured triage package:
+
+- image quality score;
+- clinical risk score;
+- model confidence;
+- uncertainty score;
+- model agreement score;
+- explainability score;
+- human review recommendation and priority.
+
+Example:
+
+```json
+{
+  "kind": "ironmind.clinical-triage.v1",
+  "intendedUse": "screening_triage_decision_support",
+  "scores": {
+    "riskScore": 0.905,
+    "confidenceScore": 0.8,
+    "uncertaintyScore": 0.2,
+    "modelAgreementScore": 0.95,
+    "imageQualityScore": 0.92,
+    "explainabilityScore": 0.7
+  },
+  "recommendation": "urgent_specialist_review",
+  "humanReviewRequired": true,
+  "reviewPriority": "urgent"
+}
+```
+
+The API endpoint is:
+
+```powershell
+curl http://127.0.0.1:4141/v1/clinical/triage `
+  -H "Content-Type: application/json" `
+  -d '{ "modality": "xray", "bodyRegion": "chest", "imageQuality": { "score": 0.92 }, "explainability": { "score": 0.7, "refs": ["heatmap://case-1"] }, "modelOutputs": [{ "modelId": "cxr-risk-a", "riskScore": 0.93, "confidenceScore": 0.82, "uncertaintyScore": 0.18 }, { "modelId": "cxr-risk-b", "riskScore": 0.88, "confidenceScore": 0.78, "uncertaintyScore": 0.22 }] }'
+```
+
+This direction fits pilots where small clinics or underserved regions need low-cost screening support, local review queues, and auditable human-in-the-loop workflows. A real clinical deployment still requires medical partners, validated imaging models, GDPR and cybersecurity controls, AI Act risk management, clinical evaluation, and integration with systems such as PACS, RIS, and EHR.
 
 ## Run
 
@@ -110,8 +161,6 @@ curl http://127.0.0.1:4141/v1/chat/completions `
 ## Native Engine Roadmap
 
 The bootstrap intentionally keeps the API, UI, session model, and model target stable while the native CPU core is built.
-
-For the CPU-only clinical screening direction, see `docs/CPU_CLINICAL_SCREENING.md`.
 
 Planned core milestones:
 
