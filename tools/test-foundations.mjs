@@ -37,11 +37,11 @@ const llamaQwenPayload = addQwen3ThinkingDirective({
   messages: [{ role: "user", content: "Ciao" }]
 });
 assert.equal(llamaQwenPayload.messages[0].content, "Ciao /no_think");
-const voxPayload = addQwen3ThinkingDirective({
-  model: "ironmind-vox",
+const iurexaPayload = addQwen3ThinkingDirective({
+  model: "iurexa",
   messages: [{ role: "user", content: "Ciao" }]
 }, "", { force: true });
-assert.equal(voxPayload.messages[0].content, "Ciao /no_think");
+assert.equal(iurexaPayload.messages[0].content, "Ciao /no_think");
 const llamaQwenReasoningPayload = addQwen3ThinkingDirective({
   model: "qwen3:14b",
   think: true,

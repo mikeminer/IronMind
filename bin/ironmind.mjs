@@ -39,8 +39,8 @@ const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
 const publicDir = path.join(rootDir, "public");
 const configPath = path.join(os.homedir(), ".ironmind", "ironmind.json");
-const ikLlamaProductModel = "ironmind-vox";
-const ikLlamaProductName = "IronMind Vox";
+const ikLlamaProductModel = "iurexa";
+const ikLlamaProductName = "Iurexa";
 let managedIkLlamaProcess = null;
 
 const defaults = {
@@ -190,7 +190,7 @@ function usage() {
   console.log(`IronMind
 
 Usage:
-  ironmind [serve] [--host 127.0.0.1] [--port 4141] [--model ironmind-vox] [--ctx 4096]
+  ironmind [serve] [--host 127.0.0.1] [--port 4141] [--model iurexa] [--ctx 4096]
            [--kv-disk-dir ~/.ironmind/kvcache] [--kv-disk-space-mb 16384]
            [--backend auto|ollama|native|llama|ik_llama] [--native-model C:\\path\\to\\model.gguf]
            [--llama-url http://127.0.0.1:8080]

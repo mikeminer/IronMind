@@ -2,7 +2,7 @@
 
 IronMind is a small native CPU inference engine and local AI orchestration layer optimized for one focused model path at a time. It targets ordinary laptops and workstations with 64GB+ RAM, using quantized GGUF weights, RAM/disk KV cache, OpenAI-compatible APIs, and an integrated local chatbot/agent.
 
-The current product direction is a normal local chatbot that speaks Italian by default and runs through a CPU-first runtime path.
+The current product direction is **Iurexa**, a local Italian legal-support assistant that runs through a CPU-first runtime path. Iurexa helps with legal orientation, issue spotting, document review, drafting, checklists, and preparation, while avoiding claims that it replaces a licensed lawyer.
 
 > Status: pre-alpha. The current bootstrap ships the server, chatbot, installer, and API shape while the native CPU engine is developed. For usable inference today it connects to a local Ollama or llama.cpp-compatible runtime and forces a CPU-only low-latency profile by default.
 
@@ -76,10 +76,11 @@ prefer to run the server yourself, set `IRONMIND_BACKEND=llama` and
 `IRONMIND_LLAMA_URL=http://127.0.0.1:8080`.
 
 When `IRONMIND_BACKEND=ik_llama`, the public agent is exposed as
-`ironmind-vox` / **IronMind Vox**. `ik_llama.cpp` remains the CPU runtime under
-the hood, while the GGUF file path stays a runtime detail. Vox speaks Italian by
-default and strips any residual `<think>` block from the visible assistant
-message unless you explicitly enable reasoning mode.
+`iurexa` / **Iurexa**. `ik_llama.cpp` remains the CPU runtime under the hood,
+while the GGUF file path stays a runtime detail. Iurexa speaks Italian by
+default, assumes Italy as the initial jurisdiction when none is provided, and
+strips any residual `<think>` block from the visible assistant message unless
+you explicitly enable reasoning mode.
 
 The integration plan is tracked in `docs/IK_LLAMA_NATIVE_RUNTIME.md`.
 
@@ -98,13 +99,13 @@ IronMind is organized around a vertical local stack:
 ## Run
 
 ```powershell
-ironmind --model ironmind-vox --ctx 4096 --kv-disk-dir C:\IronMindKV --kv-disk-space-mb 16384
+ironmind --model iurexa --ctx 4096 --kv-disk-dir C:\IronMindKV --kv-disk-space-mb 16384
 ```
 
 Environment variables:
 
 ```text
-IRONMIND_MODEL=ironmind-vox
+IRONMIND_MODEL=iurexa
 IRONMIND_CTX=131072
 IRONMIND_KV_DISK_DIR=C:\IronMindKV
 IRONMIND_KV_DISK_SPACE_MB=16384
@@ -165,7 +166,7 @@ Run the built-in 100-question evaluation suite:
 
 ```powershell
 npm run eval -- stats
-npm run eval -- run --model ironmind-vox --limit 10
+npm run eval -- run --model iurexa --limit 10
 ```
 
 OpenAI-compatible example:
@@ -173,7 +174,7 @@ OpenAI-compatible example:
 ```powershell
 curl http://127.0.0.1:4141/v1/chat/completions `
   -H "Content-Type: application/json" `
-  -d '{ "model": "ironmind-vox", "messages": [{"role": "user", "content": "Spiegami IronMind in un paragrafo."}], "stream": false }'
+  -d '{ "model": "iurexa", "messages": [{"role": "user", "content": "Analizza questa clausola: il foro competente e Roma."}], "stream": false }'
 ```
 
 ## Native Engine Roadmap

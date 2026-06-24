@@ -38,10 +38,10 @@ IronMind will start `llama-server` with:
 Then IronMind routes chat through the OpenAI-compatible
 `/v1/chat/completions` endpoint exposed by `llama-server`.
 
-The public product name for this managed CPU path is **IronMind Vox**, with API
-model id `ironmind-vox`. `ik_llama.cpp` remains the runtime, and the GGUF path
-is only a runtime configuration detail. Vox speaks Italian by default. For GGUF
-chat templates that emit hidden thinking text, Vox removes any residual
+The public product name for this managed CPU path is **Iurexa**, with API
+model id `iurexa`. `ik_llama.cpp` remains the runtime, and the GGUF path
+is only a runtime configuration detail. Iurexa speaks Italian by default and is
+tuned as a legal-support assistant. For GGUF chat templates that emit hidden thinking text, Iurexa removes any residual
 `<think>...</think>` block before returning data to `/api/chat`,
 `/v1/chat/completions`, `/v1/responses`, or `/v1/messages`. Requests that set
 `think: true`, `reasoning`, or `reasoning_effort` keep reasoning mode available.
@@ -51,7 +51,7 @@ Validated locally on Windows with `ik_llama.cpp` commit `d5507e33`,
 `ctx=4096`, `batch=128`, and six CPU threads. Smoke tests covered:
 
 - `GET /health` reporting `backendMode: "ik_llama"` and `cpuOnly: true`;
-- `POST /v1/chat/completions` returning an `ironmind-vox` Italian answer without `<think>` tags;
+- `POST /v1/chat/completions` returning an `iurexa` Italian answer without `<think>` tags;
 - `POST /api/chat` returning NDJSON consumed by the browser chatbot;
 
 ## Why Process First

@@ -13,7 +13,7 @@ const thinkEl = document.querySelector("#think");
 const messages = [
   {
     role: "assistant",
-    content: "Sto controllando il backend locale."
+    content: "Sto controllando il backend locale di Iurexa."
   }
 ];
 
@@ -24,7 +24,7 @@ function setStatus(text, danger = false) {
 
 function roleLabel(role) {
   if (role === "user") return "Tu";
-  if (role === "assistant") return "IronMind";
+  if (role === "assistant") return "Iurexa";
   return role;
 }
 
@@ -142,7 +142,7 @@ promptEl.addEventListener("keydown", (event) => {
 clearEl.addEventListener("click", () => {
   messages.splice(0, messages.length, {
     role: "assistant",
-    content: "Nuova chat pronta. Scrivimi pure."
+    content: "Nuova chat pronta. Indicami giurisdizione, fatti e obiettivo."
   });
   setStatus("Pronto");
   render();
@@ -157,7 +157,7 @@ async function loadHealth() {
     kvDiskEl.value = health.kvDiskDir;
     cpuModeEl.value = cpuModeText(health.cpuPerformance);
     if (messages.length === 1 && messages[0].role === "assistant") {
-      messages[0].content = `${health.displayName || health.model} e pronto. Parlo italiano.`;
+      messages[0].content = `${health.displayName || health.model} e pronta. Posso aiutarti con analisi, bozze e orientamento legale in italiano.`;
       render();
     }
     const files = health.contextStore?.files || 0;
