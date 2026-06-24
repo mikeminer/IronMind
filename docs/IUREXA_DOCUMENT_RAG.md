@@ -84,5 +84,7 @@ This is a local MVP, not a full e-discovery engine:
 - retrieval is lexical and deterministic, not embedding-based yet;
 - the default `ik_worker` mode removes HTTP but reloads the model per request,
   so `ik_llama` server mode is still faster for long interactive sessions;
+- `ik_embedded` removes the `llama-cli` dependency and links to `ik_llama.cpp`,
+  but it is still process-per-request until the persistent ABI lands;
 - the next step is a persistent embedded runtime ABI plus vector/semantic
   retrieval for larger document sets.

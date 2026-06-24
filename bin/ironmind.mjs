@@ -24,6 +24,12 @@ import {
   shouldUseNativeBackend
 } from "../lib/nativeBackend.mjs";
 import {
+  ikEmbeddedBackendDescription,
+  ikEmbeddedChat,
+  ikEmbeddedPath,
+  isIkEmbeddedBackend
+} from "../lib/ikEmbedded.mjs";
+import {
   ikWorkerBackendDescription,
   ikWorkerChat,
   ikWorkerPath,
@@ -71,6 +77,8 @@ const defaults = {
   ikLlamaModel: "",
   ikLlamaWorker: "",
   ikLlamaWorkerTimeoutMs: 300000,
+  ikEmbeddedRunner: "",
+  ikEmbeddedTimeoutMs: 300000,
   ikLlamaHost: "127.0.0.1",
   ikLlamaPort: 8080,
   ikLlamaAutoStart: true,
@@ -106,6 +114,8 @@ function readUserConfig() {
     if (parsed.ikLlamaModel) config.ikLlamaModel = parsed.ikLlamaModel;
     if (parsed.ikLlamaWorker) config.ikLlamaWorker = parsed.ikLlamaWorker;
     if (parsed.ikLlamaWorkerTimeoutMs) config.ikLlamaWorkerTimeoutMs = Number(parsed.ikLlamaWorkerTimeoutMs);
+    if (parsed.ikEmbeddedRunner) config.ikEmbeddedRunner = parsed.ikEmbeddedRunner;
+    if (parsed.ikEmbeddedTimeoutMs) config.ikEmbeddedTimeoutMs = Number(parsed.ikEmbeddedTimeoutMs);
     if (parsed.ikLlamaHost) config.ikLlamaHost = parsed.ikLlamaHost;
     if (parsed.ikLlamaPort) config.ikLlamaPort = Number(parsed.ikLlamaPort);
     if (parsed.ikLlamaAutoStart !== undefined) config.ikLlamaAutoStart = parsed.ikLlamaAutoStart;
@@ -150,6 +160,8 @@ function parseArgs(argv) {
     else if (arg === "--ik-llama-model" && next) config.ikLlamaModel = path.resolve(next), i += 1;
     else if (arg === "--ik-llama-worker" && next) config.ikLlamaWorker = path.resolve(next), i += 1;
     else if (arg === "--ik-worker-timeout-ms" && next) config.ikLlamaWorkerTimeoutMs = Number(next), i += 1;
+    else if (arg === "--ik-embedded-runner" && next) config.ikEmbeddedRunner = path.resolve(next), i += 1;
+    else if (arg === "--ik-embedded-timeout-ms" && next) config.ikEmbeddedTimeoutMs = Number(next), i += 1;
     else if (arg === "--ik-llama-host" && next) config.ikLlamaHost = next, i += 1;
     else if (arg === "--ik-llama-port" && next) config.ikLlamaPort = Number(next), i += 1;
     else if (arg === "--no-ik-llama-autostart") config.ikLlamaAutoStart = false;
@@ -182,6 +194,8 @@ function parseArgs(argv) {
   config.ikLlamaModel = process.env.IRONMIND_IK_LLAMA_MODEL || config.ikLlamaModel;
   config.ikLlamaWorker = process.env.IRONMIND_IK_LLAMA_WORKER || config.ikLlamaWorker;
   config.ikLlamaWorkerTimeoutMs = Number(process.env.IRONMIND_IK_WORKER_TIMEOUT_MS || config.ikLlamaWorkerTimeoutMs);
+  config.ikEmbeddedRunner = process.env.IRONMIND_IK_EMBEDDED_RUNNER || config.ikEmbeddedRunner;
+  config.ikEmbeddedTimeoutMs = Number(process.env.IRONMIND_IK_EMBEDDED_TIMEOUT_MS || config.ikEmbeddedTimeoutMs);
   config.ikLlamaHost = process.env.IRONMIND_IK_LLAMA_HOST || config.ikLlamaHost;
   config.ikLlamaPort = Number(process.env.IRONMIND_IK_LLAMA_PORT || config.ikLlamaPort);
   config.ikLlamaAutoStart = process.env.IRONMIND_IK_LLAMA_AUTOSTART === undefined
@@ -208,12 +222,13 @@ function parseArgs(argv) {
   if (config.ikLlamaServer) config.ikLlamaServer = path.resolve(config.ikLlamaServer);
   if (config.ikLlamaModel) config.ikLlamaModel = path.resolve(config.ikLlamaModel);
   if (config.ikLlamaWorker) config.ikLlamaWorker = path.resolve(config.ikLlamaWorker);
+  if (config.ikEmbeddedRunner) config.ikEmbeddedRunner = path.resolve(config.ikEmbeddedRunner);
   if (config.documentPython) config.documentPython = path.resolve(config.documentPython);
   if (config.backend === "ik_llama") {
     config.llamaUrl = `http://${config.ikLlamaHost}:${config.ikLlamaPort}`;
   }
   config.llamaUrl = config.llamaUrl.replace(/\/+$/, "");
-  if (!["auto", "ollama", "native", "llama", "ik_llama", "ik_worker"].includes(config.backend)) config.backend = "auto";
+  if (!["auto", "ollama", "native", "llama", "ik_llama", "ik_worker", "ik_embedded"].includes(config.backend)) config.backend = "auto";
   Object.assign(config, resolveCpuPerformanceConfig(config));
   return { command, config };
 }
@@ -224,10 +239,11 @@ function usage() {
 Usage:
   ironmind [serve] [--host 127.0.0.1] [--port 4141] [--model iurexa] [--ctx 4096]
            [--kv-disk-dir ~/.ironmind/kvcache] [--kv-disk-space-mb 16384]
-           [--backend auto|ollama|native|llama|ik_llama|ik_worker] [--native-model C:\\path\\to\\model.gguf]
+           [--backend auto|ollama|native|llama|ik_llama|ik_worker|ik_embedded] [--native-model C:\\path\\to\\model.gguf]
            [--llama-url http://127.0.0.1:8080]
            [--ik-llama-server C:\\path\\to\\llama-server.exe --ik-llama-model C:\\path\\to\\model.gguf]
            [--ik-llama-worker C:\\path\\to\\llama-cli.exe]
+           [--ik-embedded-runner C:\\path\\to\\ironmind-ik-native.exe]
            [--native-max-tokens 16] [--native-timeout-ms 300000]
            [--document-store-dir ~/.ironmind/documents] [--document-python C:\\path\\to\\python.exe]
            [--cpu-profile low-latency|balanced|full-context] [--cpu-threads N]
@@ -251,6 +267,8 @@ Environment:
   IRONMIND_IK_LLAMA_MODEL
   IRONMIND_IK_LLAMA_WORKER
   IRONMIND_IK_WORKER_TIMEOUT_MS
+  IRONMIND_IK_EMBEDDED_RUNNER
+  IRONMIND_IK_EMBEDDED_TIMEOUT_MS
   IRONMIND_IK_LLAMA_HOST
   IRONMIND_IK_LLAMA_PORT
   IRONMIND_IK_LLAMA_AUTOSTART
@@ -425,11 +443,11 @@ function parseMultipart(buffer, contentType = "") {
 }
 
 function publicModelId(config) {
-  return (config.backend === "ik_llama" || config.backend === "ik_worker") ? ikLlamaProductModel : config.model;
+  return (config.backend === "ik_llama" || config.backend === "ik_worker" || config.backend === "ik_embedded") ? ikLlamaProductModel : config.model;
 }
 
 function publicModelDisplayName(config) {
-  return (config.backend === "ik_llama" || config.backend === "ik_worker") ? ikLlamaProductName : config.model;
+  return (config.backend === "ik_llama" || config.backend === "ik_worker" || config.backend === "ik_embedded") ? ikLlamaProductName : config.model;
 }
 
 function normalizeChatPayload(config, body = {}) {
@@ -459,6 +477,14 @@ async function runIkWorkerChat(config, body) {
     contextSnapshot,
     promptCachePath: `${contextSnapshot.ironKvPath}.llamacache`
   });
+  return { payload: directedPayload, out, contextSnapshot };
+}
+
+async function runIkEmbeddedChat(config, body) {
+  const payload = normalizeChatPayload(config, body);
+  const directedPayload = addIurexaRuntimeUserDirective(payload, config);
+  const contextSnapshot = await saveContextSnapshot(config, directedPayload);
+  const out = await ikEmbeddedChat(config, directedPayload, { contextSnapshot });
   return { payload: directedPayload, out, contextSnapshot };
 }
 
@@ -548,7 +574,7 @@ function looksLikeClauseAnalysis(text = "") {
 
 function addIurexaRuntimeUserDirective(payload = {}, config = {}) {
   if (payload.skipIurexaRuntimeDirective) return payload;
-  if (!["ik_llama", "ik_worker"].includes(config.backend) || !Array.isArray(payload.messages)) return payload;
+  if (!["ik_llama", "ik_worker", "ik_embedded"].includes(config.backend) || !Array.isArray(payload.messages)) return payload;
   const lastUserIndex = payload.messages
     .map((message, index) => message?.role === "user" ? index : -1)
     .filter((index) => index >= 0)
@@ -682,6 +708,26 @@ async function handleUiChat(req, res, config) {
 
     if (isIkWorkerBackend(config)) {
       const { out, contextSnapshot } = await runIkWorkerChat(config, body);
+      res.writeHead(200, {
+        "content-type": "application/x-ndjson; charset=utf-8",
+        "cache-control": "no-cache"
+      });
+      const content = chunkText(out);
+      if (content) res.write(JSON.stringify({ type: "delta", content }) + "\n");
+      if (out.message?.tool_calls?.length) res.write(JSON.stringify({ type: "tool_calls", toolCalls: out.message.tool_calls }) + "\n");
+      res.write(JSON.stringify({
+        type: "done",
+        model: out.model,
+        promptEvalCount: out.prompt_eval_count,
+        evalCount: out.eval_count,
+        totalDurationMs: out.total_duration_ms || null,
+        contextSnapshot
+      }) + "\n");
+      return res.end();
+    }
+
+    if (isIkEmbeddedBackend(config)) {
+      const { out, contextSnapshot } = await runIkEmbeddedChat(config, body);
       res.writeHead(200, {
         "content-type": "application/x-ndjson; charset=utf-8",
         "cache-control": "no-cache"
@@ -838,6 +884,46 @@ async function handleOpenAiChat(req, res, config) {
       return res.end();
     }
 
+    if (isIkEmbeddedBackend(config)) {
+      const { out, contextSnapshot } = await runIkEmbeddedChat(config, body);
+      const message = openAiMessageFromBackend(out);
+      if (body.stream === false) {
+        return json(res, 200, {
+          id: `chatcmpl-${Date.now()}`,
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: out.model || model,
+          choices: [
+            {
+              index: 0,
+              message,
+              finish_reason: finishReasonForMessage(message)
+            }
+          ],
+          usage: {
+            prompt_tokens: out.prompt_eval_count || 0,
+            completion_tokens: out.eval_count || 0,
+            total_tokens: (out.prompt_eval_count || 0) + (out.eval_count || 0)
+          },
+          ironmind: { contextSnapshot, backend: "ik_embedded" }
+        });
+      }
+
+      const id = `chatcmpl-${Date.now()}`;
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache",
+        connection: "keep-alive"
+      });
+      if (message.content) res.write(`data: ${JSON.stringify(openAiChunk(id, model, message.content))}\n\n`);
+      const done = openAiChunk(id, model, "", finishReasonForMessage(message));
+      if (message.tool_calls?.length) done.choices[0].delta.tool_calls = message.tool_calls;
+      done.ironmind = { contextSnapshot, backend: "ik_embedded" };
+      res.write(`data: ${JSON.stringify(done)}\n\n`);
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+
     if (isLlamaCompatibleBackend(config)) {
       const contextSnapshot = await saveContextSnapshot(config, body);
       const out = await completeLlamaChat(config, body);
@@ -939,6 +1025,10 @@ async function completeChatOnce(config, body) {
   if (isIkWorkerBackend(config)) {
     const result = await runIkWorkerChat(config, payload);
     return { ...result, backend: "ik_worker" };
+  }
+  if (isIkEmbeddedBackend(config)) {
+    const result = await runIkEmbeddedChat(config, payload);
+    return { ...result, backend: "ik_embedded" };
   }
   const contextSnapshot = await saveContextSnapshot(config, payload);
   if (isLlamaCompatibleBackend(config)) {
@@ -1246,6 +1336,11 @@ function createServer(config) {
           description: ikWorkerBackendDescription(config),
           promptCache: "llama prompt-cache files next to IronMind context snapshots"
         },
+        ikEmbedded: {
+          executable: ikEmbeddedPath(config) || null,
+          description: ikEmbeddedBackendDescription(config),
+          sessionCache: "llama state files next to IronMind context snapshots"
+        },
         cpuPerformance: resolveCpuPerformanceConfig(config),
         nativeModel: config.nativeModel || null,
         nativeCandidate: config.backend === "ik_llama" ? null : nativeModelPath(config, { model: config.model }),
@@ -1343,6 +1438,17 @@ async function doctor(config) {
     console.log(`  ik model:  ${modelOk ? config.ikLlamaModel : "not configured"}`);
     console.log("  transport: local worker process, no llama-server HTTP");
     if (!workerOk || !modelOk) process.exitCode = 1;
+    return;
+  }
+
+  if (isIkEmbeddedBackend(config)) {
+    const runner = ikEmbeddedPath(config);
+    const runnerOk = runner && fs.existsSync(runner);
+    const modelOk = config.ikLlamaModel && fs.existsSync(config.ikLlamaModel);
+    console.log(`  ik embedded: ${runnerOk ? runner : "not built"}`);
+    console.log(`  ik model:    ${modelOk ? config.ikLlamaModel : "not configured"}`);
+    console.log("  transport: direct ik_llama.cpp C++ wrapper, no llama-server HTTP");
+    if (!runnerOk || !modelOk) process.exitCode = 1;
     return;
   }
 

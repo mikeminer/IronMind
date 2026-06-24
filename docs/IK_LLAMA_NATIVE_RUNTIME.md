@@ -8,8 +8,9 @@ The practical path is:
 1. IronMind owns API, UI, session persistence, and chat orchestration.
 2. `ik_llama.cpp` owns GGUF execution, CPU kernels, quantized matmul, KV cache, and token generation.
 3. The first integration ran `ik_llama.cpp` through its `llama-server` process.
-4. The current native-local integration can run `llama-cli` as `ik_worker`, avoiding the HTTP server hop.
-5. A later integration can replace the remaining worker process boundary with direct native linking or a small C ABI.
+4. The native-local worker integration can run `llama-cli` as `ik_worker`, avoiding the HTTP server hop.
+5. The embedded probe links directly against pinned `ik_llama.cpp` through `llama.h` as `ik_embedded`.
+6. A later integration can replace the remaining process-per-request boundary with a persistent C ABI or Node native binding.
 
 This avoids depending on Ollama for production CPU inference while keeping IronMind
 small enough to evolve.
@@ -55,6 +56,24 @@ to the IronMind context snapshot, and returns the result through the same local
 UI and OpenAI-compatible APIs. This removes the `llama-server` HTTP hop, but it
 does not yet remove the process boundary.
 
+For a direct linked runtime probe, build the pinned submodule:
+
+```powershell
+npm run native:ik:build
+$env:IRONMIND_BACKEND="ik_embedded"
+$env:IRONMIND_IK_EMBEDDED_RUNNER="C:\Users\mikfo\Documents\IRONMIND\build-ik\Release\ironmind-ik-native.exe"
+$env:IRONMIND_IK_LLAMA_MODEL="C:\models\iurexa.gguf"
+$env:IRONMIND_CPU_ONLY="true"
+ironmind
+```
+
+In `ik_embedded` mode, IronMind calls `ironmind-ik-native`, a small C++ wrapper
+that links to `ik_llama.cpp` and uses `llama_model_load_from_file`,
+`llama_tokenize`, `llama_decode`, greedy token generation, and
+`llama_state_save_file`. This removes both the HTTP hop and the dependency on
+`llama-cli` prompt parsing. It is still a process per request and still reloads
+the model until the persistent ABI/Node binding is implemented.
+
 The public product name for this managed CPU path is **Iurexa**, with API
 model id `iurexa`. `ik_llama.cpp` remains the runtime, and the GGUF path
 is only a runtime configuration detail. Iurexa speaks Italian by default and is
@@ -93,14 +112,15 @@ The process boundary is the safest first native step:
 
 ## Next Step: Direct Native Binding
 
-Once the worker path is stable, the next milestone is a direct runtime adapter:
+The `ik_embedded` probe validates direct source-level linking. The next
+milestone is making that adapter persistent:
 
-- add `third_party/ik_llama.cpp` as a pinned submodule or source dependency;
+- keep `third_party/ik_llama.cpp` pinned and update it intentionally;
 - expose a minimal C ABI for model load, tokenize, decode, KV save/restore, and free;
-- create a Node native addon or a small local worker process with a binary protocol;
+- create a Node native addon or a long-lived local worker process with a binary protocol;
 - map IronMind session snapshots to the runtime KV cache;
-- keep `IRONMIND_BACKEND=ik_llama` as the same public backend while changing the
-  internal transport from HTTP to direct native calls.
+- keep the public model id `iurexa` stable while changing only the internal
+  transport.
 
 The public product should not change when this happens: the UI, `/api/chat`,
 `/v1/chat/completions`, `/v1/responses`, and `/v1/messages` stay stable.

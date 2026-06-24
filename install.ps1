@@ -14,6 +14,8 @@ $BinDir = Join-Path $UserRoot "bin"
 $ConfigPath = Join-Path $UserRoot "ironmind.json"
 $RuntimeDir = Join-Path $UserRoot "runtimes\ik_llama.cpp"
 $RuntimeBin = Join-Path $RuntimeDir "build\bin\Release"
+$EmbeddedRuntimeDir = Join-Path $InstallDir "third_party\ik_llama.cpp"
+$EmbeddedRunner = Join-Path $InstallDir "build-ik\Release\ironmind-ik-native.exe"
 $ModelDir = Join-Path $UserRoot "models\iurexa"
 $BaseModelPath = Join-Path $ModelDir "Qwen3-1.7B-F16.gguf"
 $ImatrixPath = Join-Path $ModelDir "iurexa-qwen3-1.7b-instruct-legal-it.imatrix"
@@ -117,6 +119,51 @@ function Ensure-IurexaModel {
     & $quantize --imatrix $ImatrixPath $BaseModelPath $QuantModelPath IQ4_XS 6
 }
 
+function Ensure-IronMindEmbeddedRuntime {
+    if ($SkipRuntimeBuild) { return }
+    if (Test-Path $EmbeddedRunner) { return }
+
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Warning "Git was not found. Skipping embedded ik_llama.cpp runtime build."
+        return
+    }
+    if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+        Write-Warning "CMake was not found. Skipping embedded ik_llama.cpp runtime build."
+        return
+    }
+
+    try {
+        $embeddedCMake = Join-Path $EmbeddedRuntimeDir "CMakeLists.txt"
+        if (-not (Test-Path $embeddedCMake)) {
+            if (Test-Path $EmbeddedRuntimeDir) {
+                Remove-Item -LiteralPath $EmbeddedRuntimeDir -Recurse -Force
+            }
+            New-Item -ItemType Directory -Path (Split-Path $EmbeddedRuntimeDir) -Force | Out-Null
+            Write-Host "Cloning pinned ik_llama.cpp for embedded Iurexa runtime..."
+            git clone https://github.com/ikawrakow/ik_llama.cpp $EmbeddedRuntimeDir
+        }
+
+        Push-Location $EmbeddedRuntimeDir
+        try {
+            git fetch --depth 1 origin $IkLlamaCommit
+            git checkout $IkLlamaCommit
+        } finally {
+            Pop-Location
+        }
+
+        Push-Location $InstallDir
+        try {
+            Write-Host "Building Iurexa embedded CPU runtime..."
+            cmake -S . -B build-ik -DIRONMIND_WITH_IK_LLAMA=ON
+            cmake --build build-ik --config Release --target ironmind-ik-native
+        } finally {
+            Pop-Location
+        }
+    } catch {
+        Write-Warning "Embedded ik_llama.cpp runtime build failed: $($_.Exception.Message)"
+    }
+}
+
 if (Test-Path $ZipPath) {
     Remove-Item -LiteralPath $ZipPath -Force
 }
@@ -141,6 +188,7 @@ Copy-Item -Path (Join-Path $SourceDir.FullName "*") -Destination $InstallDir -Re
 
 Ensure-IkLlamaRuntime
 Ensure-IurexaModel
+Ensure-IronMindEmbeddedRuntime
 
 New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
 $CmdPath = Join-Path $BinDir "ironmind.cmd"
@@ -154,8 +202,11 @@ Add-ToUserPath $BinDir
 if (-not (Test-Path $ConfigPath)) {
     $serverPath = Join-Path $RuntimeBin "llama-server.exe"
     $workerPath = Join-Path $RuntimeBin "llama-cli.exe"
-    $backend = "ik_worker"
-    if (-not ((Test-Path $workerPath) -and (Test-Path $QuantModelPath))) {
+    $backend = "ik_embedded"
+    if (-not ((Test-Path $EmbeddedRunner) -and (Test-Path $QuantModelPath))) {
+        $backend = "ik_worker"
+    }
+    if (($backend -eq "ik_worker") -and -not ((Test-Path $workerPath) -and (Test-Path $QuantModelPath))) {
         $backend = "auto"
     }
     $Config = @"
@@ -168,6 +219,7 @@ if (-not (Test-Path $ConfigPath)) {
   "backend": "$backend",
   "ikLlamaServer": "$($serverPath.Replace('\', '\\'))",
   "ikLlamaWorker": "$($workerPath.Replace('\', '\\'))",
+  "ikEmbeddedRunner": "$($EmbeddedRunner.Replace('\', '\\'))",
   "ikLlamaModel": "$($QuantModelPath.Replace('\', '\\'))",
   "cpuOnly": true,
   "cpuProfile": "low-latency",
@@ -187,5 +239,5 @@ Write-Host ""
 Write-Host "Iurexa installed."
 Write-Host "Run: ironmind"
 Write-Host "Default model: iurexa"
-Write-Host "Runtime: ik_worker when llama-cli and the IQ4_XS GGUF are available"
+Write-Host "Runtime: ik_embedded when the linked CPU runtime is available, otherwise ik_worker/auto"
 Write-Host "Chatbot: http://127.0.0.1:4141"

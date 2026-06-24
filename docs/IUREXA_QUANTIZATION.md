@@ -113,8 +113,9 @@ Use IQ4_XS as the default product model:
 ```json
 {
   "model": "iurexa",
-  "backend": "ik_llama",
+  "backend": "ik_embedded",
   "ikLlamaServer": "C:\\Users\\mikfo\\Documents\\IRONMIND-runtimes\\ik_llama.cpp\\build\\bin\\Release\\llama-server.exe",
+  "ikEmbeddedRunner": "C:\\Users\\mikfo\\Documents\\IRONMIND\\build-ik\\Release\\ironmind-ik-native.exe",
   "ikLlamaModel": "C:\\Users\\mikfo\\Documents\\IRONMIND-models\\iurexa\\iurexa-qwen3-1.7b-instruct-IQ4_XS.gguf",
   "cpuOnly": true,
   "cpuProfile": "low-latency",
@@ -126,4 +127,7 @@ Use IQ4_XS as the default product model:
 ```
 
 `ik_llama.cpp` is the CPU runtime. Iurexa is the product identity exposed by the
-local app and API.
+local app and API. Use `backend: "ik_llama"` when you want a warm
+`llama-server` for lower latency, `backend: "ik_worker"` when you want no HTTP
+hop through `llama-cli`, or `backend: "ik_embedded"` when testing the direct
+linked wrapper built by `npm run native:ik:build`.

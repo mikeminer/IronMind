@@ -61,6 +61,9 @@ assert.equal(shouldUseNativeBackend({ backend: "llama", llamaUrl: "http://127.0.
 assert.equal(backendDescription({ backend: "ik_llama", llamaUrl: "http://127.0.0.1:8080" }), "ik_llama:http://127.0.0.1:8080");
 assert.equal(shouldUseNativeBackend({ backend: "ik_llama", llamaUrl: "http://127.0.0.1:8080" }), false);
 assert.match(backendDescription({ backend: "ik_worker", ikLlamaWorker: "C:\\ik\\llama-cli.exe" }), /^ik_worker:/);
+assert.match(backendDescription({ backend: "ik_embedded", ikEmbeddedRunner: "C:\\ik\\ironmind-ik-native.exe" }), /^ik_embedded:/);
+assert.equal(shouldUseNativeBackend({ backend: "ik_worker", nativeModel: extensionlessGguf }), false);
+assert.equal(shouldUseNativeBackend({ backend: "ik_embedded", nativeModel: extensionlessGguf }), false);
 
 assert.equal(defaultCpuThreads(16), 12);
 const cpuPerf = resolveCpuPerformanceConfig({

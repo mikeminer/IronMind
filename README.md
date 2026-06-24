@@ -4,7 +4,7 @@ Iurexa is a local Italian legal-support assistant powered by the IronMind CPU in
 
 Iurexa helps with legal orientation, issue spotting, document review, clause analysis, drafting, checklists, and preparation. It is designed as an assistant for professional work, not as a replacement for a licensed lawyer or for final legal advice on binding decisions.
 
-> Status: pre-alpha. The current bootstrap ships the server, chatbot, installer, and API shape while the native CPU engine is developed. For usable inference today it connects to a local Ollama or llama.cpp-compatible runtime and forces a CPU-only low-latency profile by default.
+> Status: pre-alpha. The current bootstrap ships the server, chatbot, installer, document workflow, API shape, and CPU-only `ik_llama.cpp` runtimes. The fastest usable path is still a warm llama.cpp-compatible server, while `ik_worker` and `ik_embedded` remove the external HTTP server boundary for local-native experiments.
 
 ## Install
 
@@ -90,17 +90,34 @@ lower latency, set `IRONMIND_BACKEND=ik_llama` to let Iurexa manage
 `llama-server`, or set `IRONMIND_BACKEND=llama` with
 `IRONMIND_LLAMA_URL=http://127.0.0.1:8080`.
 
-When `IRONMIND_BACKEND=ik_worker` or `IRONMIND_BACKEND=ik_llama`, the public
+For the direct embedded wrapper against the pinned submodule, build:
+
+```powershell
+npm run native:ik:build
+$env:IRONMIND_BACKEND="ik_embedded"
+$env:IRONMIND_IK_EMBEDDED_RUNNER=".\build-ik\Release\ironmind-ik-native.exe"
+$env:IRONMIND_IK_LLAMA_MODEL="C:\models\qwen3.gguf"
+$env:IRONMIND_CPU_ONLY="true"
+ironmind
+```
+
+`ik_embedded` links to `ik_llama.cpp` through `llama.h` and renders prompts from
+IronMind directly, without `llama-server` or `llama-cli`. It is still launched as
+a local process per request while the final persistent C ABI/Node binding is
+being built.
+
+When `IRONMIND_BACKEND=ik_worker`, `IRONMIND_BACKEND=ik_embedded`, or
+`IRONMIND_BACKEND=ik_llama`, the public
 agent is exposed as `iurexa` / **Iurexa**. `ik_llama.cpp` remains the CPU runtime
 under the hood, while the GGUF file path stays a runtime detail. Iurexa speaks
 Italian by default, assumes Italy as the initial jurisdiction when none is
 provided, and strips any residual `<think>` block from the visible assistant
 message unless you explicitly enable reasoning mode.
 
-The next native milestone is replacing the `ik_worker` process boundary with a
-small C ABI for model load, tokenize, decode, and KV cache operations. The
-current `ik_worker` mode already removes the HTTP server boundary; the ABI work
-removes the remaining process-per-request boundary.
+The next native milestone is turning the `ik_embedded` probe into a persistent
+C ABI/Node binding with reusable model state, direct token streaming, and direct
+KV cache restore/save. The current `ik_embedded` mode proves direct linking
+against `ik_llama.cpp`, but it still pays model-load cost per request.
 
 The integration plan is tracked in `docs/IK_LLAMA_NATIVE_RUNTIME.md`.
 The reproducible Iurexa quantization path, including Italian legal calibration,
@@ -140,6 +157,7 @@ IRONMIND_LLAMA_URL=http://127.0.0.1:8080
 IRONMIND_BACKEND=ik_llama
 IRONMIND_IK_LLAMA_SERVER=C:\ai\ik_llama.cpp\build\bin\Release\llama-server.exe
 IRONMIND_IK_LLAMA_WORKER=C:\ai\ik_llama.cpp\build\bin\Release\llama-cli.exe
+IRONMIND_IK_EMBEDDED_RUNNER=C:\path\to\ironmind-ik-native.exe
 IRONMIND_IK_LLAMA_MODEL=C:\models\qwen3.gguf
 IRONMIND_IK_LLAMA_HOST=127.0.0.1
 IRONMIND_IK_LLAMA_PORT=8080
