@@ -32,11 +32,12 @@ The recommended runtime path is `ik_llama.cpp` with a quantized GGUF model. Iure
 The current local profile is **Iurexa Lite**:
 
 - product/API model: `iurexa` / **Iurexa**;
-- runtime: `ik_llama.cpp` managed by the local IronMind server;
+- runtime: pinned `ik_llama.cpp` under `third_party/ik_llama.cpp`;
 - policy: CPU-only with `--n-gpu-layers 0`;
 - default model candidate: 1.7B `IQ4_XS` GGUF calibrated on Italian legal text;
 - compact experimental candidate: 1.7B `IQ3_KS`, smaller but less reliable for legal Italian;
 - interface: local browser chatbot at http://127.0.0.1:4141 plus OpenAI-compatible endpoints.
+- document workflow: local PDF/DOCX/TXT upload, extraction, chunking, multi-document comparison, source citations, structured reports, and RAG for documents longer than the interactive prompt window.
 
 ## CPU-Only Low-Latency Mode
 
@@ -71,32 +72,42 @@ cmake -B build -DGGML_NATIVE=ON
 cmake --build build --config Release
 ```
 
-Run Iurexa with a managed `ik_llama.cpp` server:
+Run Iurexa with the local `ik_worker` path:
 
 ```powershell
-$env:IRONMIND_BACKEND="ik_llama"
+$env:IRONMIND_BACKEND="ik_worker"
 $env:IRONMIND_IK_LLAMA_SERVER="C:\ai\ik_llama.cpp\build\bin\Release\llama-server.exe"
+$env:IRONMIND_IK_LLAMA_WORKER="C:\ai\ik_llama.cpp\build\bin\Release\llama-cli.exe"
 $env:IRONMIND_IK_LLAMA_MODEL="C:\models\qwen3.gguf"
 $env:IRONMIND_CPU_ONLY="true"
 ironmind
 ```
 
-Iurexa starts `llama-server` with CPU-only flags, including `--n-gpu-layers 0`,
-`--ctx-size`, `--threads`, and `--batch-size` from the active CPU profile. If you
-prefer to run the server yourself, set `IRONMIND_BACKEND=llama` and
+`IRONMIND_BACKEND=ik_worker` runs `llama-cli.exe` as a local native worker
+process with CPU-only flags, prompt-cache files next to IronMind context
+snapshots, and no `llama-server` HTTP hop. If you prefer a warm HTTP runtime for
+lower latency, set `IRONMIND_BACKEND=ik_llama` to let Iurexa manage
+`llama-server`, or set `IRONMIND_BACKEND=llama` with
 `IRONMIND_LLAMA_URL=http://127.0.0.1:8080`.
 
-When `IRONMIND_BACKEND=ik_llama`, the public agent is exposed as `iurexa` /
-**Iurexa**. `ik_llama.cpp` remains the CPU runtime under the hood, while the GGUF
-file path stays a runtime detail. Iurexa speaks Italian by default, assumes
-Italy as the initial jurisdiction when none is provided, and strips any residual
-`<think>` block from the visible assistant message unless you explicitly enable
-reasoning mode.
+When `IRONMIND_BACKEND=ik_worker` or `IRONMIND_BACKEND=ik_llama`, the public
+agent is exposed as `iurexa` / **Iurexa**. `ik_llama.cpp` remains the CPU runtime
+under the hood, while the GGUF file path stays a runtime detail. Iurexa speaks
+Italian by default, assumes Italy as the initial jurisdiction when none is
+provided, and strips any residual `<think>` block from the visible assistant
+message unless you explicitly enable reasoning mode.
+
+The next native milestone is replacing the `ik_worker` process boundary with a
+small C ABI for model load, tokenize, decode, and KV cache operations. The
+current `ik_worker` mode already removes the HTTP server boundary; the ABI work
+removes the remaining process-per-request boundary.
 
 The integration plan is tracked in `docs/IK_LLAMA_NATIVE_RUNTIME.md`.
 The reproducible Iurexa quantization path, including Italian legal calibration,
 `llama-imatrix`, IK-family quantization, benchmarks, and model selection, is in
 `docs/IUREXA_QUANTIZATION.md`.
+The local PDF/DOCX/TXT upload, extraction, chunking, citation, comparison, and
+report workflow is documented in `docs/IUREXA_DOCUMENT_RAG.md`.
 
 ## Design
 
@@ -128,6 +139,7 @@ IRONMIND_OLLAMA_URL=http://127.0.0.1:11434
 IRONMIND_LLAMA_URL=http://127.0.0.1:8080
 IRONMIND_BACKEND=ik_llama
 IRONMIND_IK_LLAMA_SERVER=C:\ai\ik_llama.cpp\build\bin\Release\llama-server.exe
+IRONMIND_IK_LLAMA_WORKER=C:\ai\ik_llama.cpp\build\bin\Release\llama-cli.exe
 IRONMIND_IK_LLAMA_MODEL=C:\models\qwen3.gguf
 IRONMIND_IK_LLAMA_HOST=127.0.0.1
 IRONMIND_IK_LLAMA_PORT=8080
@@ -139,6 +151,8 @@ IRONMIND_CPU_BATCH=128
 IRONMIND_CPU_CTX=4096
 IRONMIND_CPU_MAX_TOKENS=256
 IRONMIND_CPU_KEEP_ALIVE=30m
+IRONMIND_DOCUMENT_STORE_DIR=C:\IronMindDocuments
+IRONMIND_DOCUMENT_PYTHON=C:\path\to\python.exe
 IRONMIND_NATIVE_CACHE_MB=512
 IRONMIND_NATIVE_CACHE_MAX_TENSOR_MB=64
 ```
@@ -189,6 +203,14 @@ OpenAI-compatible example:
 curl http://127.0.0.1:4141/v1/chat/completions `
   -H "Content-Type: application/json" `
   -d '{ "model": "iurexa", "messages": [{"role": "user", "content": "Analizza questa clausola: il foro competente e Roma."}], "stream": false }'
+```
+
+Document RAG example:
+
+```powershell
+curl http://127.0.0.1:4141/api/documents/query `
+  -H "Content-Type: application/json" `
+  -d '{ "mode": "compare", "question": "Confronta i documenti su recesso e modifica prezzi.", "max_tokens": 512 }'
 ```
 
 ## IronMind Engine Roadmap

@@ -145,6 +145,33 @@ button:disabled {
   min-height: 44px;
 }
 
+.documents {
+  border: 1px solid var(--line);
+  background: #15191b;
+  color: var(--muted);
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+  max-height: 150px;
+  overflow: auto;
+}
+
+.document {
+  display: grid;
+  gap: 2px;
+}
+
+.document strong {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.document span {
+  font-size: 12px;
+}
+
 .chat {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;

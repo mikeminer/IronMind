@@ -9,6 +9,11 @@ const ctxEl = document.querySelector("#ctx");
 const kvDiskEl = document.querySelector("#kvDisk");
 const cpuModeEl = document.querySelector("#cpuMode");
 const thinkEl = document.querySelector("#think");
+const docsEl = document.querySelector("#docs");
+const uploadDocsEl = document.querySelector("#uploadDocs");
+const documentsEl = document.querySelector("#documents");
+const useDocsEl = document.querySelector("#useDocs");
+const docModeEl = document.querySelector("#docMode");
 
 const messages = [
   {
@@ -16,6 +21,7 @@ const messages = [
     content: "Sto controllando il backend locale di Iurexa."
   }
 ];
+let documents = [];
 
 function setStatus(text, danger = false) {
   statusEl.textContent = text;
@@ -84,6 +90,32 @@ async function sendPrompt(text) {
   setStatus("Sto generando...");
 
   try {
+    if (useDocsEl.checked) {
+      const response = await fetch("/api/documents/query", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: modelEl.value.trim(),
+          ctx: Number(ctxEl.value),
+          mode: docModeEl.value,
+          question: text
+        })
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      assistant.content = data.answer || "";
+      if (data.citations?.length) {
+        assistant.content += "\n\nFonti:\n" + data.citations
+          .map((citation) => `[${citation.id}] ${citation.source}`)
+          .join("\n");
+      }
+      render();
+      const cited = data.citations?.length || 0;
+      setStatus(`Analisi documenti completata. fonti=${cited}, backend=${data.ironmind?.backend || "-"}`);
+      return;
+    }
+
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -148,6 +180,61 @@ clearEl.addEventListener("click", () => {
   render();
 });
 
+function renderDocuments() {
+  documentsEl.innerHTML = "";
+  if (!documents.length) {
+    documentsEl.textContent = "Nessun documento caricato";
+    return;
+  }
+  for (const doc of documents) {
+    const item = document.createElement("div");
+    item.className = "document";
+    const title = document.createElement("strong");
+    title.textContent = doc.title || doc.fileName;
+    const meta = document.createElement("span");
+    meta.textContent = `${doc.chunks || 0} chunk, ${doc.sections || 0} sezioni`;
+    item.append(title, meta);
+    documentsEl.append(item);
+  }
+}
+
+async function loadDocuments() {
+  try {
+    const response = await fetch("/api/documents");
+    const data = await response.json();
+    documents = data.data || [];
+    renderDocuments();
+  } catch {
+    documents = [];
+    renderDocuments();
+  }
+}
+
+uploadDocsEl.addEventListener("click", async () => {
+  const files = [...docsEl.files];
+  if (!files.length) return;
+  uploadDocsEl.disabled = true;
+  setStatus("Estraggo testo dai documenti...");
+  try {
+    const form = new FormData();
+    for (const file of files) form.append("files", file);
+    const response = await fetch("/api/documents/upload", {
+      method: "POST",
+      body: form
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    docsEl.value = "";
+    await loadDocuments();
+    useDocsEl.checked = documents.length > 0;
+    setStatus(`Documenti caricati: ${data.uploaded.length}`);
+  } catch (error) {
+    setStatus(`Upload fallito: ${error.message}`, true);
+  } finally {
+    uploadDocsEl.disabled = false;
+  }
+});
+
 async function loadHealth() {
   try {
     const response = await fetch("/health");
@@ -162,6 +249,7 @@ async function loadHealth() {
     }
     const files = health.contextStore?.files || 0;
     setStatus(`Backend: ${health.backend}; ${cpuModeText(health.cpuPerformance)}; file disco=${files}`);
+    await loadDocuments();
   } catch {
     setStatus("Controllo health fallito", true);
   }

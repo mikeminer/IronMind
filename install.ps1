@@ -1,11 +1,27 @@
+param(
+    [switch]$SkipRuntimeBuild,
+    [switch]$SkipModelBuild
+)
+
 $ErrorActionPreference = "Stop"
 
 $Repo = "mikeminer/IronMind"
-$Branch = "main"
+$Branch = "iurexa"
+$IkLlamaCommit = "d5507e33"
 $InstallDir = Join-Path $env:LOCALAPPDATA "IronMind"
 $UserRoot = Join-Path $env:USERPROFILE ".ironmind"
 $BinDir = Join-Path $UserRoot "bin"
 $ConfigPath = Join-Path $UserRoot "ironmind.json"
+$RuntimeDir = Join-Path $UserRoot "runtimes\ik_llama.cpp"
+$RuntimeBin = Join-Path $RuntimeDir "build\bin\Release"
+$ModelDir = Join-Path $UserRoot "models\iurexa"
+$BaseModelPath = Join-Path $ModelDir "Qwen3-1.7B-F16.gguf"
+$ImatrixPath = Join-Path $ModelDir "iurexa-qwen3-1.7b-instruct-legal-it.imatrix"
+$QuantModelPath = Join-Path $ModelDir "iurexa-qwen3-1.7b-instruct-IQ4_XS.gguf"
+$BaseModelUrl = $env:IRONMIND_IUREXA_BASE_MODEL_URL
+if (-not $BaseModelUrl) {
+    $BaseModelUrl = "https://huggingface.co/lm-kit/qwen-3-1.7b-instruct-gguf/resolve/main/Qwen3-1.7B-F16.gguf"
+}
 $ZipPath = Join-Path $env:TEMP "ironmind-main.zip"
 $ExtractDir = Join-Path $env:TEMP ("ironmind-" + [guid]::NewGuid().ToString("N"))
 
@@ -37,8 +53,68 @@ function Add-ToUserPath($PathToAdd) {
 
 Ensure-Node
 
-if (-not (Get-Command ollama -ErrorAction SilentlyContinue)) {
-    Write-Warning "Ollama was not found. Install it from https://ollama.com/download, then run: ollama pull qwen3-coder:30b"
+function Ensure-IkLlamaRuntime {
+    if ($SkipRuntimeBuild) { return }
+
+    $server = Join-Path $RuntimeBin "llama-server.exe"
+    $worker = Join-Path $RuntimeBin "llama-cli.exe"
+    $quantize = Join-Path $RuntimeBin "llama-quantize.exe"
+    $imatrix = Join-Path $RuntimeBin "llama-imatrix.exe"
+    if ((Test-Path $server) -and (Test-Path $worker) -and (Test-Path $quantize) -and (Test-Path $imatrix)) {
+        return
+    }
+
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Warning "Git was not found. Skipping ik_llama.cpp runtime build."
+        return
+    }
+    if (-not (Get-Command cmake -ErrorAction SilentlyContinue)) {
+        Write-Warning "CMake was not found. Skipping ik_llama.cpp runtime build."
+        return
+    }
+
+    New-Item -ItemType Directory -Path (Split-Path $RuntimeDir) -Force | Out-Null
+    if (-not (Test-Path $RuntimeDir)) {
+        Write-Host "Cloning ik_llama.cpp..."
+        git clone https://github.com/ikawrakow/ik_llama.cpp $RuntimeDir
+    }
+
+    Push-Location $RuntimeDir
+    try {
+        git fetch --depth 1 origin $IkLlamaCommit
+        git checkout $IkLlamaCommit
+        cmake -B build -DGGML_NATIVE=ON -DGGML_IQK_FA_ALL_QUANTS=ON
+        cmake --build build --config Release --target llama-server llama-cli llama-quantize llama-imatrix llama-bench
+    } finally {
+        Pop-Location
+    }
+}
+
+function Ensure-IurexaModel {
+    if ($SkipModelBuild) { return }
+    if (Test-Path $QuantModelPath) { return }
+
+    $quantize = Join-Path $RuntimeBin "llama-quantize.exe"
+    $imatrix = Join-Path $RuntimeBin "llama-imatrix.exe"
+    if (-not ((Test-Path $quantize) -and (Test-Path $imatrix))) {
+        Write-Warning "ik_llama quantization tools are missing. Skipping model quantization."
+        return
+    }
+
+    New-Item -ItemType Directory -Path $ModelDir -Force | Out-Null
+    if (-not (Test-Path $BaseModelPath)) {
+        Write-Host "Downloading Iurexa base model F16..."
+        Invoke-WebRequest -Uri $BaseModelUrl -OutFile $BaseModelPath
+    }
+
+    $calibration = Join-Path $InstallDir "calibration\iurexa-legal-it.txt"
+    if (-not (Test-Path $ImatrixPath)) {
+        Write-Host "Generating Iurexa Italian legal importance matrix..."
+        & $imatrix -m $BaseModelPath -f $calibration -o $ImatrixPath -t 6 -c 4096 -b 128 -ngl 0
+    }
+
+    Write-Host "Quantizing Iurexa IQ4_XS..."
+    & $quantize --imatrix $ImatrixPath $BaseModelPath $QuantModelPath IQ4_XS 6
 }
 
 if (Test-Path $ZipPath) {
@@ -63,6 +139,9 @@ if (Test-Path $InstallDir) {
 New-Item -ItemType Directory -Path $InstallDir | Out-Null
 Copy-Item -Path (Join-Path $SourceDir.FullName "*") -Destination $InstallDir -Recurse -Force
 
+Ensure-IkLlamaRuntime
+Ensure-IurexaModel
+
 New-Item -ItemType Directory -Path $BinDir -Force | Out-Null
 $CmdPath = Join-Path $BinDir "ironmind.cmd"
 $Cmd = @"
@@ -73,13 +152,29 @@ Set-Content -LiteralPath $CmdPath -Value $Cmd -Encoding ASCII
 Add-ToUserPath $BinDir
 
 if (-not (Test-Path $ConfigPath)) {
+    $serverPath = Join-Path $RuntimeBin "llama-server.exe"
+    $workerPath = Join-Path $RuntimeBin "llama-cli.exe"
+    $backend = "ik_worker"
+    if (-not ((Test-Path $workerPath) -and (Test-Path $QuantModelPath))) {
+        $backend = "auto"
+    }
     $Config = @"
 {
-  "model": "qwen3-coder:30b",
-  "context": 131072,
+  "model": "iurexa",
+  "context": 40960,
   "kvDiskDir": "$($UserRoot.Replace('\', '\\'))\\kvcache",
   "kvDiskSpaceMb": 16384,
-  "ollamaUrl": "http://127.0.0.1:11434"
+  "documentStoreDir": "$($UserRoot.Replace('\', '\\'))\\documents",
+  "backend": "$backend",
+  "ikLlamaServer": "$($serverPath.Replace('\', '\\'))",
+  "ikLlamaWorker": "$($workerPath.Replace('\', '\\'))",
+  "ikLlamaModel": "$($QuantModelPath.Replace('\', '\\'))",
+  "cpuOnly": true,
+  "cpuProfile": "low-latency",
+  "cpuThreads": 6,
+  "cpuBatch": 128,
+  "cpuInteractiveCtx": 4096,
+  "cpuMaxTokens": 256
 }
 "@
     Set-Content -LiteralPath $ConfigPath -Value $Config -Encoding UTF8
@@ -89,8 +184,8 @@ Remove-Item -LiteralPath $ZipPath -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $ExtractDir -Recurse -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
-Write-Host "IronMind installed."
+Write-Host "Iurexa installed."
 Write-Host "Run: ironmind"
-Write-Host "Default model: qwen3-coder:30b"
-Write-Host "If needed: ollama pull qwen3-coder:30b"
+Write-Host "Default model: iurexa"
+Write-Host "Runtime: ik_worker when llama-cli and the IQ4_XS GGUF are available"
 Write-Host "Chatbot: http://127.0.0.1:4141"

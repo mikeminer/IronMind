@@ -11,6 +11,7 @@ import { rmsNorm, applyRoPE, softmax, causalAttention } from "../lib/mathCore.mj
 import { tensorSizeBytes } from "../lib/tensorMap.mjs";
 import { canonicalJson, canonicalizeToolCalls, extractToolCallsFromText } from "../lib/toolCalls.mjs";
 import { backendDescription, isGgufModel, shouldUseNativeBackend } from "../lib/nativeBackend.mjs";
+import { buildRagPrompt, chunkDocument, rankChunks } from "../lib/documentStore.mjs";
 import {
   addQwen3ThinkingDirective,
   stripQwenThinking
@@ -59,6 +60,7 @@ assert.equal(backendDescription({ backend: "llama", llamaUrl: "http://127.0.0.1:
 assert.equal(shouldUseNativeBackend({ backend: "llama", llamaUrl: "http://127.0.0.1:8080" }), false);
 assert.equal(backendDescription({ backend: "ik_llama", llamaUrl: "http://127.0.0.1:8080" }), "ik_llama:http://127.0.0.1:8080");
 assert.equal(shouldUseNativeBackend({ backend: "ik_llama", llamaUrl: "http://127.0.0.1:8080" }), false);
+assert.match(backendDescription({ backend: "ik_worker", ikLlamaWorker: "C:\\ik\\llama-cli.exe" }), /^ik_worker:/);
 
 assert.equal(defaultCpuThreads(16), 12);
 const cpuPerf = resolveCpuPerformanceConfig({
@@ -145,6 +147,22 @@ assert.ok(context.ironKvPath.endsWith(".ironkv"));
 const contextKv = await readIronKv(context.ironKvPath);
 assert.equal(contextKv.header.kind, "ironmind.session");
 assert.equal(contextKv.payloadLength, 0);
+
+const document = {
+  id: "doc1",
+  title: "Contratto",
+  fileName: "contratto.txt",
+  sections: [
+    { paragraph: 1, text: "Il Fornitore puo modificare i prezzi con preavviso di cinque giorni." },
+    { paragraph: 2, text: "Il Cliente puo recedere senza penali se non accetta la modifica." }
+  ]
+};
+const docChunks = chunkDocument(document, { maxChars: 500 });
+assert.equal(docChunks.length, 1);
+assert.equal(docChunks[0].source, "Contratto, par. 1-2");
+const rankedChunks = rankChunks("recesso prezzi", [{ ...document, chunks: docChunks }], { limit: 1 });
+assert.equal(rankedChunks[0].id, "doc1#c1");
+assert.ok(buildRagPrompt({ question: "Confronta", chunks: rankedChunks, documents: [document] }).includes("[F1]"));
 
 const stats = await contextStoreStats({
   kvDiskDir: path.join(dir, "kvcache"),

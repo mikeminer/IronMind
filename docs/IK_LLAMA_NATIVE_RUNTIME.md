@@ -7,15 +7,16 @@ The practical path is:
 
 1. IronMind owns API, UI, session persistence, and chat orchestration.
 2. `ik_llama.cpp` owns GGUF execution, CPU kernels, quantized matmul, KV cache, and token generation.
-3. The first integration runs `ik_llama.cpp` through its `llama-server` process.
-4. A later integration can replace the process boundary with direct native linking or a small C ABI.
+3. The first integration ran `ik_llama.cpp` through its `llama-server` process.
+4. The current native-local integration can run `llama-cli` as `ik_worker`, avoiding the HTTP server hop.
+5. A later integration can replace the remaining worker process boundary with direct native linking or a small C ABI.
 
 This avoids depending on Ollama for production CPU inference while keeping IronMind
 small enough to evolve.
 
 ## Current Integration
 
-Set:
+Set the HTTP managed server path:
 
 ```powershell
 $env:IRONMIND_BACKEND="ik_llama"
@@ -38,6 +39,22 @@ IronMind will start `llama-server` with:
 Then IronMind routes chat through the OpenAI-compatible
 `/v1/chat/completions` endpoint exposed by `llama-server`.
 
+For a no-HTTP runtime path, set:
+
+```powershell
+$env:IRONMIND_BACKEND="ik_worker"
+$env:IRONMIND_IK_LLAMA_WORKER="C:\ai\ik_llama.cpp\build\bin\Release\llama-cli.exe"
+$env:IRONMIND_IK_LLAMA_MODEL="C:\models\iurexa.gguf"
+$env:IRONMIND_CPU_ONLY="true"
+ironmind
+```
+
+In `ik_worker` mode, IronMind renders the chat prompt locally, starts
+`llama-cli.exe` as a hidden native worker process, uses a prompt-cache file next
+to the IronMind context snapshot, and returns the result through the same local
+UI and OpenAI-compatible APIs. This removes the `llama-server` HTTP hop, but it
+does not yet remove the process boundary.
+
 The public product name for this managed CPU path is **Iurexa**, with API
 model id `iurexa`. `ik_llama.cpp` remains the runtime, and the GGUF path
 is only a runtime configuration detail. Iurexa speaks Italian by default and is
@@ -55,6 +72,9 @@ Smoke tests covered:
 - `GET /health` reporting `backendMode: "ik_llama"` and `cpuOnly: true`;
 - `POST /v1/chat/completions` returning an `iurexa` Italian answer without `<think>` tags;
 - `POST /api/chat` returning NDJSON consumed by the browser chatbot;
+- `POST /api/documents/upload` extracting PDF/DOCX/TXT into local chunks;
+- `POST /api/documents/query` answering, comparing, summarizing, and reporting
+  over document chunks with source IDs;
 
 The measured CPU-only tradeoff is documented in `docs/IUREXA_QUANTIZATION.md`:
 `IQ4_XS` is the default quality profile, while `IQ3_KS` is kept as a compact
@@ -73,8 +93,7 @@ The process boundary is the safest first native step:
 
 ## Next Step: Direct Native Binding
 
-Once the managed server path is stable, the next milestone is a direct runtime
-adapter:
+Once the worker path is stable, the next milestone is a direct runtime adapter:
 
 - add `third_party/ik_llama.cpp` as a pinned submodule or source dependency;
 - expose a minimal C ABI for model load, tokenize, decode, KV save/restore, and free;

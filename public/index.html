@@ -42,6 +42,30 @@
           <span>Ragionamento</span>
         </label>
 
+        <label>
+          Documenti
+          <input id="docs" type="file" accept=".pdf,.docx,.txt,.md" multiple>
+        </label>
+
+        <button id="uploadDocs" type="button">Carica documenti</button>
+
+        <label>
+          Analisi documenti
+          <select id="docMode">
+            <option value="answer">Risposta con fonti</option>
+            <option value="summary">Riassunto</option>
+            <option value="compare">Confronto</option>
+            <option value="report">Report</option>
+          </select>
+        </label>
+
+        <label class="check">
+          <input id="useDocs" type="checkbox">
+          <span>Usa documenti</span>
+        </label>
+
+        <div class="documents" id="documents"></div>
+
         <div class="status" id="status">Pronto</div>
         <button id="clear" type="button">Nuova chat</button>
       </aside>

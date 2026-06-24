@@ -23,6 +23,20 @@ import {
   nativeRunnerPath,
   shouldUseNativeBackend
 } from "../lib/nativeBackend.mjs";
+import {
+  ikWorkerBackendDescription,
+  ikWorkerChat,
+  ikWorkerPath,
+  isIkWorkerBackend
+} from "../lib/ikWorker.mjs";
+import {
+  buildRagPrompt,
+  defaultDocumentDir,
+  listDocuments,
+  loadDocuments,
+  rankChunks,
+  saveUploadedDocument
+} from "../lib/documentStore.mjs";
 import { canonicalizeMessages, canonicalizeTools, canonicalizeToolCalls } from "../lib/toolCalls.mjs";
 import {
   applyCpuPerformanceOptions,
@@ -55,6 +69,8 @@ const defaults = {
   llamaApiKey: "",
   ikLlamaServer: "",
   ikLlamaModel: "",
+  ikLlamaWorker: "",
+  ikLlamaWorkerTimeoutMs: 300000,
   ikLlamaHost: "127.0.0.1",
   ikLlamaPort: 8080,
   ikLlamaAutoStart: true,
@@ -63,6 +79,8 @@ const defaults = {
   nativeModel: "",
   nativeMaxTokens: 16,
   nativeTimeoutMs: 300000,
+  documentStoreDir: defaultDocumentDir(),
+  documentPython: "",
   cpuOnly: true,
   cpuProfile: "low-latency",
   cpuThreads: defaultCpuThreads(),
@@ -86,6 +104,8 @@ function readUserConfig() {
     if (parsed.llamaApiKey) config.llamaApiKey = parsed.llamaApiKey;
     if (parsed.ikLlamaServer) config.ikLlamaServer = parsed.ikLlamaServer;
     if (parsed.ikLlamaModel) config.ikLlamaModel = parsed.ikLlamaModel;
+    if (parsed.ikLlamaWorker) config.ikLlamaWorker = parsed.ikLlamaWorker;
+    if (parsed.ikLlamaWorkerTimeoutMs) config.ikLlamaWorkerTimeoutMs = Number(parsed.ikLlamaWorkerTimeoutMs);
     if (parsed.ikLlamaHost) config.ikLlamaHost = parsed.ikLlamaHost;
     if (parsed.ikLlamaPort) config.ikLlamaPort = Number(parsed.ikLlamaPort);
     if (parsed.ikLlamaAutoStart !== undefined) config.ikLlamaAutoStart = parsed.ikLlamaAutoStart;
@@ -94,6 +114,8 @@ function readUserConfig() {
     if (parsed.nativeModel) config.nativeModel = parsed.nativeModel;
     if (parsed.nativeMaxTokens) config.nativeMaxTokens = Number(parsed.nativeMaxTokens);
     if (parsed.nativeTimeoutMs) config.nativeTimeoutMs = Number(parsed.nativeTimeoutMs);
+    if (parsed.documentStoreDir) config.documentStoreDir = parsed.documentStoreDir;
+    if (parsed.documentPython) config.documentPython = parsed.documentPython;
     if (parsed.cpuOnly !== undefined) config.cpuOnly = parsed.cpuOnly;
     if (parsed.cpuProfile) config.cpuProfile = parsed.cpuProfile;
     if (parsed.cpuThreads) config.cpuThreads = Number(parsed.cpuThreads);
@@ -126,6 +148,8 @@ function parseArgs(argv) {
     else if (arg === "--llama-api-key" && next) config.llamaApiKey = next, i += 1;
     else if (arg === "--ik-llama-server" && next) config.ikLlamaServer = path.resolve(next), i += 1;
     else if (arg === "--ik-llama-model" && next) config.ikLlamaModel = path.resolve(next), i += 1;
+    else if (arg === "--ik-llama-worker" && next) config.ikLlamaWorker = path.resolve(next), i += 1;
+    else if (arg === "--ik-worker-timeout-ms" && next) config.ikLlamaWorkerTimeoutMs = Number(next), i += 1;
     else if (arg === "--ik-llama-host" && next) config.ikLlamaHost = next, i += 1;
     else if (arg === "--ik-llama-port" && next) config.ikLlamaPort = Number(next), i += 1;
     else if (arg === "--no-ik-llama-autostart") config.ikLlamaAutoStart = false;
@@ -133,6 +157,8 @@ function parseArgs(argv) {
     else if (arg === "--native-model" && next) config.nativeModel = path.resolve(next), i += 1;
     else if (arg === "--native-max-tokens" && next) config.nativeMaxTokens = Number(next), i += 1;
     else if (arg === "--native-timeout-ms" && next) config.nativeTimeoutMs = Number(next), i += 1;
+    else if (arg === "--document-store-dir" && next) config.documentStoreDir = path.resolve(next), i += 1;
+    else if (arg === "--document-python" && next) config.documentPython = path.resolve(next), i += 1;
     else if (arg === "--cpu-profile" && next) config.cpuProfile = next, i += 1;
     else if (arg === "--cpu-threads" && next) config.cpuThreads = Number(next), i += 1;
     else if (arg === "--cpu-batch" && next) config.cpuBatch = Number(next), i += 1;
@@ -154,6 +180,8 @@ function parseArgs(argv) {
   config.llamaApiKey = process.env.IRONMIND_LLAMA_API_KEY || config.llamaApiKey;
   config.ikLlamaServer = process.env.IRONMIND_IK_LLAMA_SERVER || config.ikLlamaServer;
   config.ikLlamaModel = process.env.IRONMIND_IK_LLAMA_MODEL || config.ikLlamaModel;
+  config.ikLlamaWorker = process.env.IRONMIND_IK_LLAMA_WORKER || config.ikLlamaWorker;
+  config.ikLlamaWorkerTimeoutMs = Number(process.env.IRONMIND_IK_WORKER_TIMEOUT_MS || config.ikLlamaWorkerTimeoutMs);
   config.ikLlamaHost = process.env.IRONMIND_IK_LLAMA_HOST || config.ikLlamaHost;
   config.ikLlamaPort = Number(process.env.IRONMIND_IK_LLAMA_PORT || config.ikLlamaPort);
   config.ikLlamaAutoStart = process.env.IRONMIND_IK_LLAMA_AUTOSTART === undefined
@@ -164,6 +192,8 @@ function parseArgs(argv) {
   config.nativeModel = process.env.IRONMIND_NATIVE_MODEL || config.nativeModel;
   config.nativeMaxTokens = Number(process.env.IRONMIND_NATIVE_MAX_TOKENS || config.nativeMaxTokens);
   config.nativeTimeoutMs = Number(process.env.IRONMIND_NATIVE_TIMEOUT_MS || config.nativeTimeoutMs);
+  config.documentStoreDir = path.resolve(process.env.IRONMIND_DOCUMENT_STORE_DIR || config.documentStoreDir);
+  config.documentPython = process.env.IRONMIND_DOCUMENT_PYTHON || config.documentPython;
   config.cpuOnly = process.env.IRONMIND_CPU_ONLY === undefined
     ? config.cpuOnly
     : !["0", "false", "no", "off"].includes(String(process.env.IRONMIND_CPU_ONLY).toLowerCase());
@@ -177,11 +207,13 @@ function parseArgs(argv) {
   config.ollamaUrl = config.ollamaUrl.replace(/\/+$/, "");
   if (config.ikLlamaServer) config.ikLlamaServer = path.resolve(config.ikLlamaServer);
   if (config.ikLlamaModel) config.ikLlamaModel = path.resolve(config.ikLlamaModel);
+  if (config.ikLlamaWorker) config.ikLlamaWorker = path.resolve(config.ikLlamaWorker);
+  if (config.documentPython) config.documentPython = path.resolve(config.documentPython);
   if (config.backend === "ik_llama") {
     config.llamaUrl = `http://${config.ikLlamaHost}:${config.ikLlamaPort}`;
   }
   config.llamaUrl = config.llamaUrl.replace(/\/+$/, "");
-  if (!["auto", "ollama", "native", "llama", "ik_llama"].includes(config.backend)) config.backend = "auto";
+  if (!["auto", "ollama", "native", "llama", "ik_llama", "ik_worker"].includes(config.backend)) config.backend = "auto";
   Object.assign(config, resolveCpuPerformanceConfig(config));
   return { command, config };
 }
@@ -192,10 +224,12 @@ function usage() {
 Usage:
   ironmind [serve] [--host 127.0.0.1] [--port 4141] [--model iurexa] [--ctx 4096]
            [--kv-disk-dir ~/.ironmind/kvcache] [--kv-disk-space-mb 16384]
-           [--backend auto|ollama|native|llama|ik_llama] [--native-model C:\\path\\to\\model.gguf]
+           [--backend auto|ollama|native|llama|ik_llama|ik_worker] [--native-model C:\\path\\to\\model.gguf]
            [--llama-url http://127.0.0.1:8080]
            [--ik-llama-server C:\\path\\to\\llama-server.exe --ik-llama-model C:\\path\\to\\model.gguf]
+           [--ik-llama-worker C:\\path\\to\\llama-cli.exe]
            [--native-max-tokens 16] [--native-timeout-ms 300000]
+           [--document-store-dir ~/.ironmind/documents] [--document-python C:\\path\\to\\python.exe]
            [--cpu-profile low-latency|balanced|full-context] [--cpu-threads N]
            [--cpu-batch N] [--cpu-ctx N] [--cpu-max-tokens N] [--cpu-keep-alive 30m]
   ironmind doctor
@@ -215,6 +249,8 @@ Environment:
   IRONMIND_LLAMA_API_KEY
   IRONMIND_IK_LLAMA_SERVER
   IRONMIND_IK_LLAMA_MODEL
+  IRONMIND_IK_LLAMA_WORKER
+  IRONMIND_IK_WORKER_TIMEOUT_MS
   IRONMIND_IK_LLAMA_HOST
   IRONMIND_IK_LLAMA_PORT
   IRONMIND_IK_LLAMA_AUTOSTART
@@ -222,6 +258,8 @@ Environment:
   IRONMIND_NATIVE_MODEL
   IRONMIND_NATIVE_MAX_TOKENS
   IRONMIND_NATIVE_TIMEOUT_MS
+  IRONMIND_DOCUMENT_STORE_DIR
+  IRONMIND_DOCUMENT_PYTHON
   IRONMIND_CPU_ONLY
   IRONMIND_CPU_PROFILE
   IRONMIND_CPU_THREADS
@@ -333,12 +371,65 @@ async function readJson(req) {
   return JSON.parse(body);
 }
 
+async function readRequestBuffer(req, limitBytes = 64 * 1024 * 1024) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limitBytes) throw new Error(`request too large; limit is ${Math.round(limitBytes / 1024 / 1024)}MB`);
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+function parseMultipart(buffer, contentType = "") {
+  const match = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType);
+  const boundary = match?.[1] || match?.[2];
+  if (!boundary) throw new Error("multipart boundary missing");
+
+  const raw = buffer.toString("latin1");
+  const parts = raw.split(`--${boundary}`);
+  const fields = {};
+  const files = [];
+
+  for (const part of parts) {
+    if (!part || part === "--\r\n" || part === "--") continue;
+    const clean = part.replace(/^\r?\n/, "").replace(/\r?\n--$/, "");
+    const sep = clean.indexOf("\r\n\r\n");
+    if (sep < 0) continue;
+    const headerText = clean.slice(0, sep);
+    let body = clean.slice(sep + 4);
+    body = body.replace(/\r\n$/, "");
+    const headers = Object.fromEntries(headerText.split(/\r?\n/).map((line) => {
+      const colon = line.indexOf(":");
+      if (colon < 0) return [line.toLowerCase(), ""];
+      return [line.slice(0, colon).trim().toLowerCase(), line.slice(colon + 1).trim()];
+    }));
+    const disposition = headers["content-disposition"] || "";
+    const name = /name="([^"]+)"/i.exec(disposition)?.[1];
+    const filename = /filename="([^"]*)"/i.exec(disposition)?.[1];
+    if (!name) continue;
+    if (filename) {
+      files.push({
+        name,
+        filename,
+        mimeType: headers["content-type"] || "application/octet-stream",
+        data: Buffer.from(body, "latin1")
+      });
+    } else {
+      fields[name] = Buffer.from(body, "latin1").toString("utf8");
+    }
+  }
+
+  return { fields, files };
+}
+
 function publicModelId(config) {
-  return config.backend === "ik_llama" ? ikLlamaProductModel : config.model;
+  return (config.backend === "ik_llama" || config.backend === "ik_worker") ? ikLlamaProductModel : config.model;
 }
 
 function publicModelDisplayName(config) {
-  return config.backend === "ik_llama" ? ikLlamaProductName : config.model;
+  return (config.backend === "ik_llama" || config.backend === "ik_worker") ? ikLlamaProductName : config.model;
 }
 
 function normalizeChatPayload(config, body = {}) {
@@ -358,6 +449,17 @@ async function runNativeChat(config, body) {
   const out = await nativeChat(config, payload, { saveKvPath: snapshot.ironKvPath });
   const contextSnapshot = await finalizeNativeContextSnapshot(config, snapshot, { native: out.native });
   return { payload, out, contextSnapshot };
+}
+
+async function runIkWorkerChat(config, body) {
+  const payload = normalizeChatPayload(config, body);
+  const directedPayload = addIurexaRuntimeUserDirective(payload, config);
+  const contextSnapshot = await saveContextSnapshot(config, directedPayload);
+  const out = await ikWorkerChat(config, directedPayload, {
+    contextSnapshot,
+    promptCachePath: `${contextSnapshot.ironKvPath}.llamacache`
+  });
+  return { payload: directedPayload, out, contextSnapshot };
 }
 
 function openAiMessageFromBackend(out) {
@@ -434,12 +536,19 @@ function isLlamaCompatibleBackend(config) {
 
 const iurexaRuntimeUserDirective = [
   "Istruzione runtime Iurexa: rispondi in italiano in modo conciso.",
-  "Se analizzi una clausola, rispondi esattamente in 5 righe: Sintesi, Punti critici, Rischio per il cliente, Modifica consigliata, Informazioni mancanti.",
+  "Usa il formato a 5 righe solo per analisi di clausole o testi contrattuali.",
+  "Formato: Sintesi, Punti critici, Rischio per il cliente, Modifica consigliata, Informazioni mancanti.",
   "Non usare sottoelenchi nelle analisi clausole, non proporre numeri nuovi se non richiesti, e non chiamare il recesso revoca, restituzione, rimborso, ritorno o rimozione."
 ].join(" ");
 
+function looksLikeClauseAnalysis(text = "") {
+  return /\b(clausol[ae]|contratt\w*|fornitore|cliente|recesso|foro|penal[ei]|corrispettiv\w*|preavviso|modificare unilateralmente|condizioni generali)\b/i
+    .test(String(text));
+}
+
 function addIurexaRuntimeUserDirective(payload = {}, config = {}) {
-  if (config.backend !== "ik_llama" || !Array.isArray(payload.messages)) return payload;
+  if (payload.skipIurexaRuntimeDirective) return payload;
+  if (!["ik_llama", "ik_worker"].includes(config.backend) || !Array.isArray(payload.messages)) return payload;
   const lastUserIndex = payload.messages
     .map((message, index) => message?.role === "user" ? index : -1)
     .filter((index) => index >= 0)
@@ -449,6 +558,7 @@ function addIurexaRuntimeUserDirective(payload = {}, config = {}) {
   const messages = payload.messages.map((message, index) => {
     if (index !== lastUserIndex) return message;
     const content = message?.content == null ? "" : String(message.content);
+    if (!looksLikeClauseAnalysis(content)) return message;
     if (content.includes("Istruzione runtime Iurexa:")) return message;
     return { ...message, content: `${content.trimEnd()}\n\n${iurexaRuntimeUserDirective}` };
   });
@@ -570,6 +680,26 @@ async function handleUiChat(req, res, config) {
       return res.end();
     }
 
+    if (isIkWorkerBackend(config)) {
+      const { out, contextSnapshot } = await runIkWorkerChat(config, body);
+      res.writeHead(200, {
+        "content-type": "application/x-ndjson; charset=utf-8",
+        "cache-control": "no-cache"
+      });
+      const content = chunkText(out);
+      if (content) res.write(JSON.stringify({ type: "delta", content }) + "\n");
+      if (out.message?.tool_calls?.length) res.write(JSON.stringify({ type: "tool_calls", toolCalls: out.message.tool_calls }) + "\n");
+      res.write(JSON.stringify({
+        type: "done",
+        model: out.model,
+        promptEvalCount: out.prompt_eval_count,
+        evalCount: out.eval_count,
+        totalDurationMs: out.total_duration_ms || null,
+        contextSnapshot
+      }) + "\n");
+      return res.end();
+    }
+
     if (isLlamaCompatibleBackend(config)) {
       const contextSnapshot = await saveContextSnapshot(config, body);
       const out = await completeLlamaChat(config, body);
@@ -663,6 +793,46 @@ async function handleOpenAiChat(req, res, config) {
       const done = openAiChunk(id, model, "", finishReasonForMessage(message));
       if (message.tool_calls?.length) done.choices[0].delta.tool_calls = message.tool_calls;
       done.ironmind = { contextSnapshot, backend: "native" };
+      res.write(`data: ${JSON.stringify(done)}\n\n`);
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+
+    if (isIkWorkerBackend(config)) {
+      const { out, contextSnapshot } = await runIkWorkerChat(config, body);
+      const message = openAiMessageFromBackend(out);
+      if (body.stream === false) {
+        return json(res, 200, {
+          id: `chatcmpl-${Date.now()}`,
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: out.model || model,
+          choices: [
+            {
+              index: 0,
+              message,
+              finish_reason: finishReasonForMessage(message)
+            }
+          ],
+          usage: {
+            prompt_tokens: out.prompt_eval_count || 0,
+            completion_tokens: out.eval_count || 0,
+            total_tokens: (out.prompt_eval_count || 0) + (out.eval_count || 0)
+          },
+          ironmind: { contextSnapshot, backend: "ik_worker" }
+        });
+      }
+
+      const id = `chatcmpl-${Date.now()}`;
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache",
+        connection: "keep-alive"
+      });
+      if (message.content) res.write(`data: ${JSON.stringify(openAiChunk(id, model, message.content))}\n\n`);
+      const done = openAiChunk(id, model, "", finishReasonForMessage(message));
+      if (message.tool_calls?.length) done.choices[0].delta.tool_calls = message.tool_calls;
+      done.ironmind = { contextSnapshot, backend: "ik_worker" };
       res.write(`data: ${JSON.stringify(done)}\n\n`);
       res.write("data: [DONE]\n\n");
       return res.end();
@@ -765,6 +935,10 @@ async function completeChatOnce(config, body) {
   if (shouldUseNativeBackend(config, payload)) {
     const result = await runNativeChat(config, payload);
     return { ...result, backend: "native" };
+  }
+  if (isIkWorkerBackend(config)) {
+    const result = await runIkWorkerChat(config, payload);
+    return { ...result, backend: "ik_worker" };
   }
   const contextSnapshot = await saveContextSnapshot(config, payload);
   if (isLlamaCompatibleBackend(config)) {
@@ -955,6 +1129,96 @@ function handleModels(res, config) {
   });
 }
 
+async function handleListDocuments(res, config) {
+  return json(res, 200, {
+    object: "list",
+    data: await listDocuments(config)
+  });
+}
+
+async function handleUploadDocuments(req, res, config) {
+  try {
+    const body = await readRequestBuffer(req);
+    const multipart = parseMultipart(body, req.headers["content-type"] || "");
+    const uploaded = [];
+    for (const file of multipart.files.filter((item) => item.filename)) {
+      uploaded.push(await saveUploadedDocument(config, file));
+    }
+    return json(res, 200, {
+      ok: true,
+      uploaded
+    });
+  } catch (error) {
+    return json(res, 400, { ok: false, error: error.message });
+  }
+}
+
+async function handleDocumentQuery(req, res, config) {
+  try {
+    const body = await readJson(req);
+    const question = String(body.question || body.input || "").trim();
+    if (!question) return json(res, 400, { ok: false, error: "question is required" });
+
+    const documents = (await loadDocuments(config, body.documentIds || [])).filter(Boolean);
+    if (!documents.length) return json(res, 400, { ok: false, error: "no documents uploaded" });
+
+    const chunks = rankChunks(question, documents, { limit: body.limit || 10 });
+    const prompt = buildRagPrompt({
+      question,
+      mode: body.mode || "answer",
+      chunks,
+      documents
+    });
+    const ragSystem = [
+      "Sei Iurexa, assistente virtuale locale specializzata in supporto legale.",
+      "In questa richiesta lavori in modalita RAG documentale.",
+      "Usa solo i testi caricati come fonte primaria; non usare memoria generale se la fonte non supporta la risposta.",
+      "Cita le fonti con ID come [F1], [F2].",
+      "Se i documenti non contengono l'informazione, dillo chiaramente."
+    ].join(" ");
+    const { out, contextSnapshot, backend } = await completeChatOnce(config, {
+      model: body.model || publicModelId(config),
+      ctx: body.ctx || config.ctx,
+      max_tokens: body.max_tokens || 512,
+      skipIurexaRuntimeDirective: true,
+      messages: [
+        { role: "system", content: ragSystem },
+        { role: "user", content: prompt }
+      ]
+    });
+    const message = openAiMessageFromBackend(out);
+    return json(res, 200, {
+      ok: true,
+      answer: message.content || "",
+      mode: body.mode || "answer",
+      documents: documents.map((doc) => ({
+        id: doc.id,
+        title: doc.title,
+        fileName: doc.fileName
+      })),
+      citations: chunks.map((chunk, index) => ({
+        id: `F${index + 1}`,
+        documentId: chunk.docId,
+        title: chunk.title,
+        fileName: chunk.fileName,
+        source: chunk.source,
+        pageStart: chunk.pageStart,
+        pageEnd: chunk.pageEnd,
+        paragraphStart: chunk.paragraphStart,
+        paragraphEnd: chunk.paragraphEnd,
+        excerpt: chunk.text.slice(0, 600)
+      })),
+      usage: {
+        prompt_tokens: out.prompt_eval_count || 0,
+        completion_tokens: out.eval_count || 0
+      },
+      ironmind: { contextSnapshot, backend }
+    });
+  } catch (error) {
+    return json(res, 502, { ok: false, error: error.message });
+  }
+}
+
 function createServer(config) {
   return http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
@@ -971,10 +1235,16 @@ function createServer(config) {
         ikLlama: {
           server: config.ikLlamaServer || null,
           model: config.ikLlamaModel || null,
+          worker: ikWorkerPath(config) || null,
           host: config.ikLlamaHost,
           port: config.ikLlamaPort,
           autoStart: config.ikLlamaAutoStart,
           managedPid: managedIkLlamaProcess?.pid || null
+        },
+        ikWorker: {
+          executable: ikWorkerPath(config) || null,
+          description: ikWorkerBackendDescription(config),
+          promptCache: "llama prompt-cache files next to IronMind context snapshots"
         },
         cpuPerformance: resolveCpuPerformanceConfig(config),
         nativeModel: config.nativeModel || null,
@@ -983,12 +1253,25 @@ function createServer(config) {
         nativeTimeoutMs: config.nativeTimeoutMs,
         kvDiskDir: config.kvDiskDir,
         kvDiskSpaceMb: config.kvDiskSpaceMb,
+        documentStoreDir: config.documentStoreDir,
         contextStore: await contextStoreStats(config)
       });
     }
 
     if (req.method === "GET" && url.pathname === "/v1/models") {
       return handleModels(res, config);
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/documents") {
+      return handleListDocuments(res, config);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/documents/upload") {
+      return handleUploadDocuments(req, res, config);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/documents/query") {
+      return handleDocumentQuery(req, res, config);
     }
 
     if (req.method === "POST" && url.pathname === "/api/chat") {
@@ -1021,6 +1304,7 @@ async function doctor(config) {
   console.log(`  runtime: ${backendDescription(config)}`);
   console.log(`  ollama:  ${config.ollamaUrl}`);
   console.log(`  llama:   ${config.llamaUrl}`);
+  console.log(`  docs:    ${config.documentStoreDir}`);
   const cpu = resolveCpuPerformanceConfig(config);
   console.log(`  cpu mode: ${cpu.cpuOnly ? "CPU-only (num_gpu=0)" : "GPU allowed by config"}`);
   console.log(`  cpu profile: ${cpu.profile}, ctx=${cpu.interactiveContext || "full"}, threads=${cpu.threads}, batch=${cpu.batch}, max_tokens=${cpu.maxTokens}`);
@@ -1048,6 +1332,17 @@ async function doctor(config) {
       console.log(`  backend: not reachable (${error.message})`);
       process.exitCode = 1;
     }
+    return;
+  }
+
+  if (isIkWorkerBackend(config)) {
+    const worker = ikWorkerPath(config);
+    const workerOk = worker && fs.existsSync(worker);
+    const modelOk = config.ikLlamaModel && fs.existsSync(config.ikLlamaModel);
+    console.log(`  ik worker: ${workerOk ? worker : "not configured"}`);
+    console.log(`  ik model:  ${modelOk ? config.ikLlamaModel : "not configured"}`);
+    console.log("  transport: local worker process, no llama-server HTTP");
+    if (!workerOk || !modelOk) process.exitCode = 1;
     return;
   }
 
