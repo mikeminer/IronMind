@@ -38,19 +38,20 @@ IronMind will start `llama-server` with:
 Then IronMind routes chat through the OpenAI-compatible
 `/v1/chat/completions` endpoint exposed by `llama-server`.
 
-For Qwen3-family models, IronMind prepares the `llama-server` request with a
-Qwen-compatible thinking directive. By default it appends `/no_think` to the
-last user turn and removes any residual `<think>...</think>` text from the
-assistant message before returning data to `/api/chat`, `/v1/chat/completions`,
-`/v1/responses`, or `/v1/messages`. Requests that set `think: true`,
-`reasoning`, or `reasoning_effort` keep reasoning mode available.
+The public product name for this managed CPU path is **IronMind Sentinel**,
+with API model id `ironmind-sentinel`. `ik_llama.cpp` remains the runtime, and
+the GGUF path is only a runtime configuration detail. For GGUF chat templates
+that emit hidden thinking text, Sentinel removes any residual
+`<think>...</think>` block before returning data to `/api/chat`,
+`/v1/chat/completions`, `/v1/responses`, or `/v1/messages`. Requests that set
+`think: true`, `reasoning`, or `reasoning_effort` keep reasoning mode available.
 
 Validated locally on Windows with `ik_llama.cpp` commit `d5507e33`,
 `llama-server.exe`, `Qwen3 14B` GGUF `Q4_K - Medium`, `--n-gpu-layers 0`,
 `ctx=4096`, `batch=128`, and six CPU threads. Smoke tests covered:
 
 - `GET /health` reporting `backendMode: "ik_llama"` and `cpuOnly: true`;
-- `POST /v1/chat/completions` returning a Qwen3 answer without `<think>` tags;
+- `POST /v1/chat/completions` returning an `ironmind-sentinel` answer without `<think>` tags;
 - `POST /api/chat` returning NDJSON consumed by the browser chatbot;
 - `POST /v1/clinical/screening` returning an `ironmind.clinical-screening-case.v1`.
 

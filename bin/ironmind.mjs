@@ -42,6 +42,8 @@ const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
 const publicDir = path.join(rootDir, "public");
 const configPath = path.join(os.homedir(), ".ironmind", "ironmind.json");
+const ikLlamaProductModel = "ironmind-sentinel";
+const ikLlamaProductName = "IronMind Sentinel";
 let managedIkLlamaProcess = null;
 
 const defaults = {
@@ -334,11 +336,19 @@ async function readJson(req) {
   return JSON.parse(body);
 }
 
+function publicModelId(config) {
+  return config.backend === "ik_llama" ? ikLlamaProductModel : config.model;
+}
+
+function publicModelDisplayName(config) {
+  return config.backend === "ik_llama" ? ikLlamaProductName : config.model;
+}
+
 function normalizeChatPayload(config, body = {}) {
   const messages = ensureCpuSystemMessage(canonicalizeMessages(body.messages || []));
   return {
     ...body,
-    model: body.model || config.model,
+    model: body.model || publicModelId(config),
     ctx: Number(body.ctx || config.ctx),
     messages,
     tools: canonicalizeTools(body.tools || [])
@@ -426,10 +436,13 @@ function isLlamaCompatibleBackend(config) {
 }
 
 function llamaRequestBody(config, payload = {}, stream = false) {
-  const preparedPayload = addQwen3ThinkingDirective(payload, config.model);
+  const model = config.backend === "ik_llama" ? publicModelId(config) : (payload.model || config.model);
+  const preparedPayload = addQwen3ThinkingDirective({ ...payload, model }, config.model, {
+    force: config.backend === "ik_llama"
+  });
   const { options } = applyCpuPerformanceOptions(config, payload);
   const body = {
-    model: preparedPayload.model || config.model,
+    model,
     messages: preparedPayload.messages || [],
     stream,
     temperature: options.temperature,
@@ -938,7 +951,7 @@ function handleModels(res, config) {
     object: "list",
     data: [
       {
-        id: config.model,
+        id: publicModelId(config),
         object: "model",
         created: 0,
         owned_by: "ironmind"
@@ -954,7 +967,8 @@ function createServer(config) {
     if (req.method === "GET" && url.pathname === "/health") {
       return json(res, 200, {
         ok: true,
-        model: config.model,
+        model: publicModelId(config),
+        displayName: publicModelDisplayName(config),
         context: config.ctx,
         backend: backendDescription(config),
         backendMode: config.backend,
@@ -969,7 +983,7 @@ function createServer(config) {
         },
         cpuPerformance: resolveCpuPerformanceConfig(config),
         nativeModel: config.nativeModel || null,
-        nativeCandidate: nativeModelPath(config, { model: config.model }),
+        nativeCandidate: config.backend === "ik_llama" ? null : nativeModelPath(config, { model: config.model }),
         nativeMaxTokens: config.nativeMaxTokens,
         nativeTimeoutMs: config.nativeTimeoutMs,
         kvDiskDir: config.kvDiskDir,
@@ -1149,7 +1163,7 @@ async function main() {
   const server = createServer(config);
   server.listen(config.port, config.host, () => {
     console.log(`IronMind listening on http://${config.host}:${config.port}`);
-    console.log(`Model: ${config.model}`);
+    console.log(`Model: ${publicModelDisplayName(config)} (${publicModelId(config)})`);
     console.log(`Backend: ${backendDescription(config)}`);
     if (ikRuntime.started) console.log(`ik_llama managed runtime pid: ${ikRuntime.pid}`);
   });

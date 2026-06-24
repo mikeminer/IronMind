@@ -445,7 +445,7 @@ async function loadHealth() {
     kvDiskEl.value = health.kvDiskDir;
     cpuModeEl.value = cpuModeText(health.cpuPerformance);
     if (messages.length === 1 && messages[0].role === "assistant") {
-      messages[0].content = `IronMind is ready with ${health.model}.`;
+      messages[0].content = `${health.displayName || health.model} is ready.`;
       render();
     }
     const files = health.contextStore?.files || 0;
