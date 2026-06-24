@@ -1,18 +1,18 @@
-# IronMind
+# Iurexa
 
-IronMind is a small native CPU inference engine and local AI orchestration layer optimized for one focused model path at a time. It targets ordinary laptops and workstations with 64GB+ RAM, using quantized GGUF weights, RAM/disk KV cache, OpenAI-compatible APIs, and an integrated local chatbot/agent.
+Iurexa is a local Italian legal-support assistant powered by the IronMind CPU inference and orchestration stack. It targets ordinary laptops and workstations, using CPU-only `ik_llama.cpp`, quantized GGUF weights, RAM/disk context storage, OpenAI-compatible APIs, and an integrated local chatbot.
 
-The current product direction is **Iurexa**, a local Italian legal-support assistant that runs through a CPU-first runtime path. Iurexa helps with legal orientation, issue spotting, document review, drafting, checklists, and preparation, while avoiding claims that it replaces a licensed lawyer.
+Iurexa helps with legal orientation, issue spotting, document review, clause analysis, drafting, checklists, and preparation. It is designed as an assistant for professional work, not as a replacement for a licensed lawyer or for final legal advice on binding decisions.
 
 > Status: pre-alpha. The current bootstrap ships the server, chatbot, installer, and API shape while the native CPU engine is developed. For usable inference today it connects to a local Ollama or llama.cpp-compatible runtime and forces a CPU-only low-latency profile by default.
 
 ## Install
 
 ```powershell
-irm https://raw.githubusercontent.com/mikeminer/IronMind/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/mikeminer/IronMind/iurexa/install.ps1 | iex
 ```
 
-Then start IronMind:
+Then start Iurexa:
 
 ```powershell
 ironmind
@@ -20,16 +20,27 @@ ironmind
 
 Open http://127.0.0.1:4141.
 
-## Why IronMind
+## Why Iurexa
 
-IronMind targets machines like an i9 laptop with 64GB RAM: enough memory for strong quantized 14B-32B models, but not enough for DwarfStar's DeepSeek V4 Flash class.
+Iurexa targets machines like an i9 laptop with 64GB RAM: enough memory for useful quantized local models, but without relying on GPU acceleration.
 The context target is 100k+ tokens, with RAM used for the active working set and disk used for persistent prefix/KV state.
 
-The first recommended runtime path is `ik_llama.cpp` with a quantized GGUF model. IronMind exposes this as a simple local chat product while keeping the model file as a runtime detail.
+The recommended runtime path is `ik_llama.cpp` with a quantized GGUF model. Iurexa exposes this as a simple local chat product while keeping the model file as a runtime detail.
+
+## Iurexa Lite
+
+The current local profile is **Iurexa Lite**:
+
+- product/API model: `iurexa` / **Iurexa**;
+- runtime: `ik_llama.cpp` managed by the local IronMind server;
+- policy: CPU-only with `--n-gpu-layers 0`;
+- default model candidate: 1.7B `IQ4_XS` GGUF calibrated on Italian legal text;
+- compact experimental candidate: 1.7B `IQ3_KS`, smaller but less reliable for legal Italian;
+- interface: local browser chatbot at http://127.0.0.1:4141 plus OpenAI-compatible endpoints.
 
 ## CPU-Only Low-Latency Mode
 
-IronMind now defaults to a CPU-only runtime policy for interactive inference:
+Iurexa now defaults to a CPU-only runtime policy for interactive inference:
 
 - forces Ollama GPU layers to zero with `num_gpu: 0`;
 - keeps the model warm with `keep_alive`;
@@ -42,10 +53,10 @@ The default profile is `low-latency`: `ctx=4096`, `max_tokens=256`, `batch=128`,
 
 ### Native ik_llama.cpp CPU Runtime
 
-For CPU-first local inference, IronMind can run through `ik_llama.cpp` instead of
+For CPU-first local inference, Iurexa can run through `ik_llama.cpp` instead of
 Ollama. IronMind stays the API/UI/orchestration layer, while `ik_llama.cpp`
 provides the CPU-optimised GGUF runtime. This is the intended path for making
-IronMind native local inference on CPU without GPU dependency.
+Iurexa native local inference on CPU without GPU dependency.
 
 `ik_llama.cpp` is useful because it focuses on CPU performance, row-interleaved
 quant packing, newer IQK/Trellis quantization paths, and faster CPU prompt
@@ -60,7 +71,7 @@ cmake -B build -DGGML_NATIVE=ON
 cmake --build build --config Release
 ```
 
-Run IronMind with a managed `ik_llama.cpp` server:
+Run Iurexa with a managed `ik_llama.cpp` server:
 
 ```powershell
 $env:IRONMIND_BACKEND="ik_llama"
@@ -70,17 +81,17 @@ $env:IRONMIND_CPU_ONLY="true"
 ironmind
 ```
 
-IronMind starts `llama-server` with CPU-only flags, including `--n-gpu-layers 0`,
+Iurexa starts `llama-server` with CPU-only flags, including `--n-gpu-layers 0`,
 `--ctx-size`, `--threads`, and `--batch-size` from the active CPU profile. If you
 prefer to run the server yourself, set `IRONMIND_BACKEND=llama` and
 `IRONMIND_LLAMA_URL=http://127.0.0.1:8080`.
 
-When `IRONMIND_BACKEND=ik_llama`, the public agent is exposed as
-`iurexa` / **Iurexa**. `ik_llama.cpp` remains the CPU runtime under the hood,
-while the GGUF file path stays a runtime detail. Iurexa speaks Italian by
-default, assumes Italy as the initial jurisdiction when none is provided, and
-strips any residual `<think>` block from the visible assistant message unless
-you explicitly enable reasoning mode.
+When `IRONMIND_BACKEND=ik_llama`, the public agent is exposed as `iurexa` /
+**Iurexa**. `ik_llama.cpp` remains the CPU runtime under the hood, while the GGUF
+file path stays a runtime detail. Iurexa speaks Italian by default, assumes
+Italy as the initial jurisdiction when none is provided, and strips any residual
+`<think>` block from the visible assistant message unless you explicitly enable
+reasoning mode.
 
 The integration plan is tracked in `docs/IK_LLAMA_NATIVE_RUNTIME.md`.
 The reproducible Iurexa quantization path, including Italian legal calibration,
@@ -89,7 +100,7 @@ The reproducible Iurexa quantization path, including Italian legal calibration,
 
 ## Design
 
-IronMind is organized around a vertical local stack:
+Iurexa is organized around a vertical local stack:
 
 - CPU/RAM inference target: one supported model family first, not a generic model zoo.
 - Prompt renderer: model-specific chat and tool formatting.
@@ -180,9 +191,9 @@ curl http://127.0.0.1:4141/v1/chat/completions `
   -d '{ "model": "iurexa", "messages": [{"role": "user", "content": "Analizza questa clausola: il foro competente e Roma."}], "stream": false }'
 ```
 
-## Native Engine Roadmap
+## IronMind Engine Roadmap
 
-The bootstrap intentionally keeps the API, UI, session model, and model target stable while the native CPU core is built.
+Iurexa intentionally keeps the API, UI, session model, and model target stable while the underlying IronMind native CPU core is built.
 
 Planned core milestones:
 
