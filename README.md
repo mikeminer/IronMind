@@ -2,7 +2,7 @@
 
 IronMind is a small native CPU inference engine and local AI orchestration layer optimized for one focused model path at a time. It targets ordinary laptops and workstations with 64GB+ RAM, using quantized GGUF weights, RAM/disk KV cache, OpenAI-compatible APIs, and an integrated local chatbot/agent.
 
-The current strategic direction includes CPU-efficient clinical imaging triage: using local, quantized inference and model orchestration to support early screening workflows in resource-limited medical centres.
+The current product direction is a normal local chatbot that speaks Italian by default and runs through a CPU-first runtime path.
 
 > Status: pre-alpha. The current bootstrap ships the server, chatbot, installer, and API shape while the native CPU engine is developed. For usable inference today it connects to a local Ollama or llama.cpp-compatible runtime and forces a CPU-only low-latency profile by default.
 
@@ -12,10 +12,9 @@ The current strategic direction includes CPU-efficient clinical imaging triage: 
 irm https://raw.githubusercontent.com/mikeminer/IronMind/main/install.ps1 | iex
 ```
 
-Then pull the default CPU/RAM model and start IronMind:
+Then start IronMind:
 
 ```powershell
-ollama pull qwen3-coder:30b
 ironmind
 ```
 
@@ -26,9 +25,7 @@ Open http://127.0.0.1:4141.
 IronMind targets machines like an i9 laptop with 64GB RAM: enough memory for strong quantized 14B-32B models, but not enough for DwarfStar's DeepSeek V4 Flash class.
 The context target is 100k+ tokens, with RAM used for the active working set and disk used for persistent prefix/KV state.
 
-The first recommended target is `qwen3-coder:30b` because it is useful for coding agents, has a practical memory footprint, and gives IronMind a narrow model path to optimize around.
-
-For clinical screening, the value proposition is different: IronMind is the CPU-first orchestration and triage layer around specialised medical imaging models. It is intended to prioritise cases for human review, not to replace clinical judgement.
+The first recommended runtime path is `ik_llama.cpp` with a quantized GGUF model. IronMind exposes this as a simple local chat product while keeping the model file as a runtime detail.
 
 ## CPU-Only Low-Latency Mode
 
@@ -79,9 +76,9 @@ prefer to run the server yourself, set `IRONMIND_BACKEND=llama` and
 `IRONMIND_LLAMA_URL=http://127.0.0.1:8080`.
 
 When `IRONMIND_BACKEND=ik_llama`, the public agent is exposed as
-`ironmind-sentinel` / **IronMind Sentinel**. `ik_llama.cpp` remains the CPU
-runtime under the hood, while the GGUF file path stays a runtime detail.
-Sentinel also strips any residual `<think>` block from the visible assistant
+`ironmind-vox` / **IronMind Vox**. `ik_llama.cpp` remains the CPU runtime under
+the hood, while the GGUF file path stays a runtime detail. Vox speaks Italian by
+default and strips any residual `<think>` block from the visible assistant
 message unless you explicitly enable reasoning mode.
 
 The integration plan is tracked in `docs/IK_LLAMA_NATIVE_RUNTIME.md`.
@@ -94,87 +91,20 @@ IronMind is organized around a vertical local stack:
 - Prompt renderer: model-specific chat and tool formatting.
 - Connected chatbot: local browser UI streamed from the IronMind server.
 - OpenAI-compatible API: `/v1/models` and `/v1/chat/completions`.
-- Clinical screening APIs: `/v1/clinical/screening`, `/v1/clinical/image/quality`, and `/v1/clinical/triage`.
 - Agent path: future `/v1/responses` and Anthropic-compatible `/v1/messages`.
 - KV strategy: RAM session first, disk persistence next.
 - Bench/eval discipline: token throughput, prompt rendering checks, and regression traces.
 
-## CPU Clinical Screening
-
-IronMind can be positioned for medical imaging pilots as a CPU-only, quantized AI screening assistant for triage and decision support.
-
-The clinical path is documented in `docs/CPU_CLINICAL_SCREENING.md` and starts with a browser image-quality gate plus a reusable triage scoring contract implemented in `lib/imageQuality.mjs` and `lib/clinicalScoring.mjs`.
-
-The intended output is not a diagnosis. It is a structured screening package:
-
-- image quality score;
-- clinical risk score;
-- model confidence;
-- uncertainty score;
-- model agreement score;
-- explainability score;
-- human review recommendation and priority.
-
-The first MVP step is available in the local UI as `Clinical Image Triage`: load a PNG, JPEG, or WebP image, or run the built-in demo case, and IronMind computes CPU-side readiness metrics, a non-diagnostic demo screening package, review priority, and an exportable case JSON.
-
-Expected clinical impact after validation includes earlier cancer and cardiovascular screening support, faster prioritisation of critical cases, lower radiology workload pressure, remote screening support for underserved regions, and reduced delays through PACS/RIS/EHR-oriented workflows.
-
-Image quality gate API:
-
-```powershell
-curl http://127.0.0.1:4141/v1/clinical/image/quality `
-  -H "Content-Type: application/json" `
-  -d '{ "fileName": "case.png", "mimeType": "image/png", "modality": "xray", "bodyRegion": "chest", "width": 1600, "height": 1400, "pixelStats": { "lumaMean": 126, "lumaStdDev": 58, "laplacianMean": 24, "highFrequencyNoise": 0.08, "saturationRatio": 0.01, "darkRatio": 0.01, "brightRatio": 0.01 } }'
-```
-
-End-to-end screening case API:
-
-```powershell
-curl http://127.0.0.1:4141/v1/clinical/screening `
-  -H "Content-Type: application/json" `
-  -d '{ "image": { "fileName": "case.png", "mimeType": "image/png", "modality": "xray", "bodyRegion": "chest", "width": 1600, "height": 1400, "pixelStats": { "lumaMean": 126, "lumaStdDev": 58, "laplacianMean": 24, "highFrequencyNoise": 0.08, "saturationRatio": 0.01, "darkRatio": 0.01, "brightRatio": 0.01 } } }'
-```
-
-Example:
-
-```json
-{
-  "kind": "ironmind.clinical-triage.v1",
-  "intendedUse": "screening_triage_decision_support",
-  "scores": {
-    "riskScore": 0.905,
-    "confidenceScore": 0.8,
-    "uncertaintyScore": 0.2,
-    "modelAgreementScore": 0.95,
-    "imageQualityScore": 0.92,
-    "explainabilityScore": 0.7
-  },
-  "recommendation": "urgent_specialist_review",
-  "humanReviewRequired": true,
-  "reviewPriority": "urgent"
-}
-```
-
-The API endpoint is:
-
-```powershell
-curl http://127.0.0.1:4141/v1/clinical/triage `
-  -H "Content-Type: application/json" `
-  -d '{ "modality": "xray", "bodyRegion": "chest", "imageQuality": { "score": 0.92 }, "explainability": { "score": 0.7, "refs": ["heatmap://case-1"] }, "modelOutputs": [{ "modelId": "cxr-risk-a", "riskScore": 0.93, "confidenceScore": 0.82, "uncertaintyScore": 0.18 }, { "modelId": "cxr-risk-b", "riskScore": 0.88, "confidenceScore": 0.78, "uncertaintyScore": 0.22 }] }'
-```
-
-This direction fits pilots where small clinics or underserved regions need low-cost screening support, local review queues, and auditable human-in-the-loop workflows. A real clinical deployment still requires medical partners, validated imaging models, GDPR and cybersecurity controls, AI Act risk management, clinical evaluation, and integration with systems such as PACS, RIS, and EHR.
-
 ## Run
 
 ```powershell
-ironmind --model qwen3-coder:30b --ctx 131072 --kv-disk-dir C:\IronMindKV --kv-disk-space-mb 16384
+ironmind --model ironmind-vox --ctx 4096 --kv-disk-dir C:\IronMindKV --kv-disk-space-mb 16384
 ```
 
 Environment variables:
 
 ```text
-IRONMIND_MODEL=qwen3-coder:30b
+IRONMIND_MODEL=ironmind-vox
 IRONMIND_CTX=131072
 IRONMIND_KV_DISK_DIR=C:\IronMindKV
 IRONMIND_KV_DISK_SPACE_MB=16384
@@ -235,7 +165,7 @@ Run the built-in 100-question evaluation suite:
 
 ```powershell
 npm run eval -- stats
-npm run eval -- run --model qwen3:14b --limit 10
+npm run eval -- run --model ironmind-vox --limit 10
 ```
 
 OpenAI-compatible example:
@@ -243,7 +173,7 @@ OpenAI-compatible example:
 ```powershell
 curl http://127.0.0.1:4141/v1/chat/completions `
   -H "Content-Type: application/json" `
-  -d '{ "model": "qwen3-coder:30b", "messages": [{"role": "user", "content": "Explain IronMind in one paragraph."}], "stream": false }'
+  -d '{ "model": "ironmind-vox", "messages": [{"role": "user", "content": "Spiegami IronMind in un paragrafo."}], "stream": false }'
 ```
 
 ## Native Engine Roadmap

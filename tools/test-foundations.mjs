@@ -16,14 +16,6 @@ import {
   stripQwenThinking
 } from "../lib/qwenThinking.mjs";
 import {
-  aggregateModelOutputs,
-  createClinicalTriage,
-  scoreImageQuality,
-  scoreModelAgreement
-} from "../lib/clinicalScoring.mjs";
-import { assessImageQuality, scoreResolution } from "../lib/imageQuality.mjs";
-import { createClinicalScreeningCase, createDemoModelOutputs } from "../lib/clinicalScreening.mjs";
-import {
   applyCpuPerformanceOptions,
   defaultCpuThreads,
   ensureCpuSystemMessage,
@@ -45,11 +37,11 @@ const llamaQwenPayload = addQwen3ThinkingDirective({
   messages: [{ role: "user", content: "Ciao" }]
 });
 assert.equal(llamaQwenPayload.messages[0].content, "Ciao /no_think");
-const sentinelPayload = addQwen3ThinkingDirective({
-  model: "ironmind-sentinel",
+const voxPayload = addQwen3ThinkingDirective({
+  model: "ironmind-vox",
   messages: [{ role: "user", content: "Ciao" }]
 }, "", { force: true });
-assert.equal(sentinelPayload.messages[0].content, "Ciao /no_think");
+assert.equal(voxPayload.messages[0].content, "Ciao /no_think");
 const llamaQwenReasoningPayload = addQwen3ThinkingDirective({
   model: "qwen3:14b",
   think: true,
@@ -103,141 +95,6 @@ assert.equal(cpuOptions.keepAlive, "30m");
 const cpuMessages = ensureCpuSystemMessage([{ role: "user", content: "GPU?" }]);
 assert.equal(cpuMessages[0].role, "system");
 assert.match(cpuMessages[0].content, /CPU-only/);
-
-assert.equal(scoreResolution(1024, 1024), 1);
-const highQualityImage = assessImageQuality({
-  fileName: "case.png",
-  mimeType: "image/png",
-  modality: "xray",
-  bodyRegion: "chest",
-  width: 1600,
-  height: 1400,
-  pixelStats: {
-    lumaMean: 126,
-    lumaStdDev: 58,
-    laplacianMean: 24,
-    highFrequencyNoise: 0.08,
-    saturationRatio: 0.01,
-    darkRatio: 0.01,
-    brightRatio: 0.01
-  }
-});
-assert.equal(highQualityImage.screeningReadiness, "ready_for_model_review");
-assert.equal(highQualityImage.humanReviewRequired, false);
-assert.ok(highQualityImage.clinicalTriageImageQuality.score > 0.8);
-
-const lowQualityImage = assessImageQuality({
-  width: 320,
-  height: 240,
-  pixelStats: {
-    lumaMean: 20,
-    lumaStdDev: 8,
-    laplacianMean: 2,
-    highFrequencyNoise: 0.75,
-    saturationRatio: 0.2,
-    darkRatio: 0.4,
-    brightRatio: 0
-  }
-});
-assert.equal(lowQualityImage.screeningReadiness, "repeat_or_manual_image_review");
-assert.equal(lowQualityImage.humanReviewRequired, true);
-
-const demoModelOutputs = createDemoModelOutputs({
-  width: 1600,
-  height: 1400,
-  pixelStats: {
-    lumaMean: 126,
-    lumaStdDev: 58,
-    laplacianMean: 24,
-    highFrequencyNoise: 0.08,
-    saturationRatio: 0.01,
-    darkRatio: 0.01,
-    brightRatio: 0.01
-  }
-}, highQualityImage);
-assert.equal(demoModelOutputs.length, 2);
-assert.ok(demoModelOutputs.every((output) => output.intendedUse === "non_diagnostic_screening_demo"));
-
-const screeningCase = createClinicalScreeningCase({
-  image: {
-    fileName: "case.png",
-    mimeType: "image/png",
-    modality: "xray",
-    bodyRegion: "chest",
-    width: 1600,
-    height: 1400,
-    pixelStats: {
-      lumaMean: 126,
-      lumaStdDev: 58,
-      laplacianMean: 24,
-      highFrequencyNoise: 0.08,
-      saturationRatio: 0.01,
-      darkRatio: 0.01,
-      brightRatio: 0.01
-    }
-  }
-}, { createdAt: "2026-06-18T12:00:00.000Z" });
-assert.equal(screeningCase.kind, "ironmind.clinical-screening-case.v1");
-assert.match(screeningCase.caseId, /^IM-[A-F0-9]{8}$/);
-assert.equal(screeningCase.audit.modelAdapterMode, "demo_cpu_adapter");
-assert.notEqual(screeningCase.triage.reviewPriority, "quality_gate");
-assert.ok(screeningCase.exportFileName.endsWith(".ironmind-screening.json"));
-
-const lowQualityScreeningCase = createClinicalScreeningCase({
-  image: {
-    width: 320,
-    height: 240,
-    pixelStats: {
-      lumaMean: 20,
-      lumaStdDev: 8,
-      laplacianMean: 2,
-      highFrequencyNoise: 0.75,
-      saturationRatio: 0.2,
-      darkRatio: 0.4,
-      brightRatio: 0
-    }
-  }
-}, { createdAt: "2026-06-18T12:00:00.000Z" });
-assert.equal(lowQualityScreeningCase.triage.reviewPriority, "quality_gate");
-assert.equal(lowQualityScreeningCase.reviewQueue.humanReviewRequired, true);
-
-assert.equal(scoreImageQuality({ score: 1.2 }), 1);
-assert.ok(scoreImageQuality({
-  resolutionScore: 0.9,
-  contrastScore: 0.8,
-  noiseScore: 0.7,
-  artifactScore: 0.8,
-  modalityFitScore: 0.9
-}) > 0.75);
-assert.ok(scoreModelAgreement([{ riskScore: 0.5 }, { riskScore: 0.52 }, { riskScore: 0.48 }]) > 0.95);
-assert.ok(scoreModelAgreement([{ riskScore: 0.1 }, { riskScore: 0.9 }]) < 0.3);
-
-const aggregate = aggregateModelOutputs([
-  { modelId: "a", riskScore: 0.8, confidenceScore: 0.7, uncertaintyScore: 0.2, weight: 2 },
-  { modelId: "b", riskScore: 0.6, confidenceScore: 0.8, uncertaintyScore: 0.3, weight: 1 }
-]);
-assert.ok(aggregate.riskScore > 0.72 && aggregate.riskScore < 0.74);
-assert.equal(aggregate.modelCount, 2);
-
-const urgentTriage = createClinicalTriage({
-  modality: "xray",
-  bodyRegion: "chest",
-  imageQuality: { score: 0.92 },
-  explainability: { score: 0.7, refs: ["heatmap://case-1"] },
-  modelOutputs: [
-    { modelId: "cxr-risk-a", riskScore: 0.93, confidenceScore: 0.82, uncertaintyScore: 0.18 },
-    { modelId: "cxr-risk-b", riskScore: 0.88, confidenceScore: 0.78, uncertaintyScore: 0.22 }
-  ]
-});
-assert.equal(urgentTriage.humanReviewRequired, true);
-assert.equal(urgentTriage.reviewPriority, "urgent");
-assert.equal(urgentTriage.evidence.modelIds.length, 2);
-
-const lowQualityTriage = createClinicalTriage({
-  imageQuality: { score: 0.2 },
-  modelOutputs: [{ riskScore: 0.2, confidenceScore: 0.9, uncertaintyScore: 0.1 }]
-});
-assert.equal(lowQualityTriage.recommendation, "repeat_or_manual_image_review");
 
 const kvPath = path.join(dir, "test.ironkv");
 await writeIronKv(kvPath, {

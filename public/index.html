@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="it">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>IronMind</title>
+    <title>IronMind Vox</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
@@ -13,120 +13,44 @@
           <div class="mark">IM</div>
           <div>
             <h1>IronMind</h1>
-            <p>CPU/RAM local inference</p>
+            <p>Chat locale in italiano</p>
           </div>
         </div>
 
         <label>
-          Agent
-          <input id="model" value="ironmind-sentinel" autocomplete="off">
+          Assistente
+          <input id="model" value="ironmind-vox" autocomplete="off">
         </label>
 
         <label>
-          Context
+          Contesto
           <input id="ctx" type="number" min="2048" step="2048" value="131072">
         </label>
 
         <label>
-          Disk context
+          Memoria su disco
           <input id="kvDisk" value="loading..." readonly>
         </label>
 
         <label>
-          CPU mode
+          Modalita CPU
           <input id="cpuMode" value="loading..." readonly>
         </label>
 
         <label class="check">
           <input id="think" type="checkbox">
-          <span>Thinking</span>
+          <span>Ragionamento</span>
         </label>
 
-        <div class="status" id="status">Ready</div>
-        <button id="clear" type="button">Clear chat</button>
+        <div class="status" id="status">Pronto</div>
+        <button id="clear" type="button">Nuova chat</button>
       </aside>
 
       <section class="chat">
-        <section class="clinical" aria-label="Clinical image triage">
-          <div class="clinical-head">
-            <div>
-              <h2>Clinical Image Triage</h2>
-              <p>CPU screening case review</p>
-            </div>
-            <label class="file-pick">
-              <span>Image</span>
-              <input id="clinicalFile" type="file" accept="image/png,image/jpeg,image/webp">
-            </label>
-          </div>
-
-          <div class="clinical-grid">
-            <div class="clinical-preview">
-              <img id="clinicalPreview" alt="">
-              <span id="clinicalPreviewEmpty">No image loaded</span>
-            </div>
-            <div class="clinical-controls">
-              <label>
-                Modality
-                <select id="clinicalModality">
-                  <option value="xray">X-ray</option>
-                  <option value="ct">CT</option>
-                  <option value="mri">MRI</option>
-                  <option value="ultrasound">Ultrasound</option>
-                  <option value="other">Other</option>
-                </select>
-              </label>
-              <label>
-                Body region
-                <input id="clinicalRegion" value="chest" autocomplete="off">
-              </label>
-              <div class="clinical-actions">
-                <button id="clinicalAnalyze" type="button" disabled>Run screening</button>
-                <button id="clinicalDemo" type="button">Demo case</button>
-                <button id="clinicalExport" type="button" disabled>Export case</button>
-              </div>
-            </div>
-            <div class="clinical-result" id="clinicalResult">
-              <div class="metric">
-                <span>Quality</span>
-                <strong id="qualityScore">-</strong>
-              </div>
-              <div class="metric">
-                <span>Risk</span>
-                <strong id="riskScore">-</strong>
-              </div>
-              <div class="metric">
-                <span>Confidence</span>
-                <strong id="confidenceScore">-</strong>
-              </div>
-              <div class="metric">
-                <span>Uncertainty</span>
-                <strong id="uncertaintyScore">-</strong>
-              </div>
-              <div class="metric">
-                <span>Readiness</span>
-                <strong id="qualityReadiness">-</strong>
-              </div>
-              <div class="metric">
-                <span>Priority</span>
-                <strong id="reviewPriority">-</strong>
-              </div>
-              <div class="metric">
-                <span>Agreement</span>
-                <strong id="agreementScore">-</strong>
-              </div>
-              <div class="metric">
-                <span>Explainability</span>
-                <strong id="explainabilityScore">-</strong>
-              </div>
-              <div class="quality-reasons" id="qualityReasons">Awaiting image.</div>
-            </div>
-          </div>
-        </section>
-
         <div id="messages" class="messages"></div>
         <form id="composer" class="composer">
-          <textarea id="prompt" rows="3" placeholder="Ask IronMind..." autofocus></textarea>
-          <button id="send" type="submit">Send</button>
+          <textarea id="prompt" rows="3" placeholder="Scrivi un messaggio in italiano..." autofocus></textarea>
+          <button id="send" type="submit">Invia</button>
         </form>
       </section>
     </main>

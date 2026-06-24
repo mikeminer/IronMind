@@ -9,58 +9,23 @@ const ctxEl = document.querySelector("#ctx");
 const kvDiskEl = document.querySelector("#kvDisk");
 const cpuModeEl = document.querySelector("#cpuMode");
 const thinkEl = document.querySelector("#think");
-const clinicalFileEl = document.querySelector("#clinicalFile");
-const clinicalPreviewEl = document.querySelector("#clinicalPreview");
-const clinicalPreviewEmptyEl = document.querySelector("#clinicalPreviewEmpty");
-const clinicalAnalyzeEl = document.querySelector("#clinicalAnalyze");
-const clinicalDemoEl = document.querySelector("#clinicalDemo");
-const clinicalExportEl = document.querySelector("#clinicalExport");
-const clinicalModalityEl = document.querySelector("#clinicalModality");
-const clinicalRegionEl = document.querySelector("#clinicalRegion");
-const clinicalResultEl = document.querySelector("#clinicalResult");
-const qualityScoreEl = document.querySelector("#qualityScore");
-const qualityReadinessEl = document.querySelector("#qualityReadiness");
-const riskScoreEl = document.querySelector("#riskScore");
-const confidenceScoreEl = document.querySelector("#confidenceScore");
-const uncertaintyScoreEl = document.querySelector("#uncertaintyScore");
-const reviewPriorityEl = document.querySelector("#reviewPriority");
-const agreementScoreEl = document.querySelector("#agreementScore");
-const explainabilityScoreEl = document.querySelector("#explainabilityScore");
-const qualityReasonsEl = document.querySelector("#qualityReasons");
-
-let clinicalImagePayload = null;
-let clinicalPreviewUrl = null;
-let lastClinicalCase = null;
-
-const demoClinicalImagePayload = Object.freeze({
-  fileName: "demo-chest-screening.png",
-  mimeType: "image/png",
-  width: 1600,
-  height: 1400,
-  modality: "xray",
-  bodyRegion: "chest",
-  pixelStats: {
-    lumaMean: 126,
-    lumaStdDev: 58,
-    laplacianMean: 24,
-    highFrequencyNoise: 0.08,
-    saturationRatio: 0.01,
-    missingPixelRatio: 0,
-    darkRatio: 0.01,
-    brightRatio: 0.01
-  }
-});
 
 const messages = [
   {
     role: "assistant",
-    content: "IronMind is checking the local backend."
+    content: "Sto controllando il backend locale."
   }
 ];
 
 function setStatus(text, danger = false) {
   statusEl.textContent = text;
   statusEl.style.color = danger ? "var(--danger)" : "var(--muted)";
+}
+
+function roleLabel(role) {
+  if (role === "user") return "Tu";
+  if (role === "assistant") return "IronMind";
+  return role;
 }
 
 function render() {
@@ -71,7 +36,7 @@ function render() {
 
     const role = document.createElement("span");
     role.className = "role";
-    role.textContent = message.role;
+    role.textContent = roleLabel(message.role);
 
     const content = document.createElement("div");
     content.textContent = message.content;
@@ -82,246 +47,10 @@ function render() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-function formatScore(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return "-";
-  return `${Math.round(Math.max(0, Math.min(1, n)) * 100)}%`;
-}
-
-function formatReadiness(value) {
-  if (!value) return "-";
-  return String(value).replace(/_/g, " ");
-}
-
 function cpuModeText(performance = {}) {
-  const mode = performance.cpuOnly ? "CPU-only" : "GPU allowed";
-  const ctx = performance.interactiveContext || "full";
-  return `${mode}, ${performance.profile || "unknown"}, ctx=${ctx}, threads=${performance.threads || "-"}`;
-}
-
-function resetClinicalResult(message = "Awaiting image.") {
-  lastClinicalCase = null;
-  clinicalExportEl.disabled = true;
-  qualityScoreEl.textContent = "-";
-  riskScoreEl.textContent = "-";
-  confidenceScoreEl.textContent = "-";
-  uncertaintyScoreEl.textContent = "-";
-  qualityReadinessEl.textContent = "-";
-  reviewPriorityEl.textContent = "-";
-  agreementScoreEl.textContent = "-";
-  explainabilityScoreEl.textContent = "-";
-  qualityReasonsEl.textContent = message;
-  clinicalResultEl.classList.remove("ready", "needs-review");
-}
-
-function setClinicalScreeningState(result = {}) {
-  lastClinicalCase = result;
-  const imageQuality = result.imageQuality || {};
-  const triage = result.triage || {};
-  const scores = triage.scores || {};
-  const reviewQueue = result.reviewQueue || {};
-  const reasons = reviewQueue.reasons?.length ? reviewQueue.reasons : triage.reasons || [];
-  const actions = reviewQueue.nextActions || [];
-
-  qualityScoreEl.textContent = formatScore(imageQuality.score);
-  riskScoreEl.textContent = formatScore(scores.riskScore);
-  confidenceScoreEl.textContent = formatScore(scores.confidenceScore);
-  uncertaintyScoreEl.textContent = formatScore(scores.uncertaintyScore);
-  qualityReadinessEl.textContent = formatReadiness(imageQuality.screeningReadiness);
-  reviewPriorityEl.textContent = formatReadiness(reviewQueue.priority || triage.reviewPriority);
-  agreementScoreEl.textContent = formatScore(scores.modelAgreementScore);
-  explainabilityScoreEl.textContent = formatScore(scores.explainabilityScore);
-  qualityReasonsEl.textContent = [
-    formatReadiness(reviewQueue.recommendation || triage.recommendation),
-    ...reasons.map(formatReadiness),
-    ...actions
-  ].filter(Boolean).join(" | ");
-  clinicalResultEl.classList.toggle("needs-review", Boolean(reviewQueue.humanReviewRequired || triage.humanReviewRequired));
-  clinicalResultEl.classList.toggle("ready", !reviewQueue.humanReviewRequired && imageQuality.screeningReadiness === "ready_for_model_review");
-  clinicalExportEl.disabled = false;
-}
-
-function loadImageElement(file) {
-  return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => resolve({ image, url });
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("Unable to load image"));
-    };
-    image.src = url;
-  });
-}
-
-function lumaForPixel(data, offset) {
-  return data[offset] * 0.2126 + data[offset + 1] * 0.7152 + data[offset + 2] * 0.0722;
-}
-
-function imagePayloadFromCanvas(file, image, maxSide = 384) {
-  const sourceWidth = image.naturalWidth || image.width;
-  const sourceHeight = image.naturalHeight || image.height;
-  const scale = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
-  const width = Math.max(1, Math.round(sourceWidth * scale));
-  const height = Math.max(1, Math.round(sourceHeight * scale));
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) throw new Error("Canvas image analysis unavailable");
-  canvas.width = width;
-  canvas.height = height;
-  context.drawImage(image, 0, 0, width, height);
-
-  const data = context.getImageData(0, 0, width, height).data;
-  const pixelCount = width * height;
-  const luma = new Float32Array(pixelCount);
-  let lumaSum = 0;
-  let lumaSqSum = 0;
-  let dark = 0;
-  let bright = 0;
-  let saturated = 0;
-  let missing = 0;
-
-  for (let pixel = 0; pixel < pixelCount; pixel += 1) {
-    const offset = pixel * 4;
-    const y = lumaForPixel(data, offset);
-    luma[pixel] = y;
-    lumaSum += y;
-    lumaSqSum += y * y;
-    if (y < 16) dark += 1;
-    if (y > 240) bright += 1;
-    if (data[offset + 3] < 8) missing += 1;
-    if (
-      data[offset] <= 3 || data[offset] >= 252 ||
-      data[offset + 1] <= 3 || data[offset + 1] >= 252 ||
-      data[offset + 2] <= 3 || data[offset + 2] >= 252
-    ) saturated += 1;
-  }
-
-  let laplacianSum = 0;
-  let noiseSum = 0;
-  let interiorCount = 0;
-  for (let y = 1; y < height - 1; y += 1) {
-    for (let x = 1; x < width - 1; x += 1) {
-      const index = y * width + x;
-      const center = luma[index];
-      const north = luma[index - width];
-      const south = luma[index + width];
-      const west = luma[index - 1];
-      const east = luma[index + 1];
-      const localMean = (north + south + west + east) / 4;
-      laplacianSum += Math.abs(center * 4 - north - south - west - east);
-      noiseSum += Math.abs(center - localMean) / 255;
-      interiorCount += 1;
-    }
-  }
-
-  const lumaMean = lumaSum / pixelCount;
-  const variance = Math.max(0, lumaSqSum / pixelCount - lumaMean * lumaMean);
-
-  return {
-    fileName: file.name,
-    mimeType: file.type || "application/octet-stream",
-    width: sourceWidth,
-    height: sourceHeight,
-    modality: clinicalModalityEl.value,
-    bodyRegion: clinicalRegionEl.value.trim() || null,
-    pixelStats: {
-      lumaMean,
-      lumaStdDev: Math.sqrt(variance),
-      laplacianMean: interiorCount ? laplacianSum / interiorCount : 0,
-      highFrequencyNoise: interiorCount ? noiseSum / interiorCount : 1,
-      saturationRatio: saturated / pixelCount,
-      missingPixelRatio: missing / pixelCount,
-      darkRatio: dark / pixelCount,
-      brightRatio: bright / pixelCount
-    }
-  };
-}
-
-async function analyzeClinicalImage() {
-  if (!clinicalImagePayload) return;
-  clinicalAnalyzeEl.disabled = true;
-  clinicalExportEl.disabled = true;
-  qualityReasonsEl.textContent = "Running screening...";
-  clinicalResultEl.classList.remove("ready", "needs-review");
-
-  try {
-    const response = await fetch("/v1/clinical/screening", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        image: {
-          ...clinicalImagePayload,
-          modality: clinicalModalityEl.value,
-          bodyRegion: clinicalRegionEl.value.trim() || null
-        }
-      })
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.detail || `HTTP ${response.status}`);
-    }
-    setClinicalScreeningState(await response.json());
-  } catch (error) {
-    lastClinicalCase = null;
-    clinicalExportEl.disabled = true;
-    qualityReasonsEl.textContent = `Screening error: ${error.message}`;
-    clinicalResultEl.classList.add("needs-review");
-  } finally {
-    clinicalAnalyzeEl.disabled = false;
-  }
-}
-
-async function prepareClinicalImage(file) {
-  if (!file) return;
-  clinicalAnalyzeEl.disabled = true;
-  resetClinicalResult("Loading image...");
-
-  try {
-    const { image, url } = await loadImageElement(file);
-    if (clinicalPreviewUrl) URL.revokeObjectURL(clinicalPreviewUrl);
-    clinicalPreviewUrl = url;
-    clinicalPreviewEl.src = url;
-    clinicalPreviewEl.alt = file.name;
-    clinicalPreviewEmptyEl.textContent = "No image loaded";
-    clinicalPreviewEl.parentElement.classList.add("loaded");
-    clinicalImagePayload = imagePayloadFromCanvas(file, image);
-    clinicalAnalyzeEl.disabled = false;
-    await analyzeClinicalImage();
-  } catch (error) {
-    clinicalImagePayload = null;
-    resetClinicalResult(`Image load error: ${error.message}`);
-    clinicalResultEl.classList.add("needs-review");
-  }
-}
-
-async function runDemoClinicalCase() {
-  if (clinicalPreviewUrl) {
-    URL.revokeObjectURL(clinicalPreviewUrl);
-    clinicalPreviewUrl = null;
-  }
-  clinicalFileEl.value = "";
-  clinicalPreviewEl.removeAttribute("src");
-  clinicalPreviewEl.alt = "";
-  clinicalPreviewEl.parentElement.classList.remove("loaded");
-  clinicalPreviewEmptyEl.textContent = "Demo case";
-  clinicalImagePayload = { ...demoClinicalImagePayload };
-  clinicalAnalyzeEl.disabled = false;
-  resetClinicalResult("Demo case ready.");
-  await analyzeClinicalImage();
-}
-
-function exportClinicalCase() {
-  if (!lastClinicalCase) return;
-  const blob = new Blob([JSON.stringify(lastClinicalCase, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = lastClinicalCase.exportFileName || `${lastClinicalCase.caseId || "ironmind-case"}.json`;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  const mode = performance.cpuOnly ? "solo CPU" : "GPU consentita";
+  const ctx = performance.interactiveContext || "completo";
+  return `${mode}, ${performance.profile || "sconosciuto"}, ctx=${ctx}, thread=${performance.threads || "-"}`;
 }
 
 async function readNdjson(response, onObject) {
@@ -352,7 +81,7 @@ async function sendPrompt(text) {
   render();
 
   sendEl.disabled = true;
-  setStatus("Generating...");
+  setStatus("Sto generando...");
 
   try {
     const response = await fetch("/api/chat", {
@@ -380,15 +109,15 @@ async function sendPrompt(text) {
       }
       if (event.type === "done") {
         const snapshot = event.contextSnapshot;
-        const cached = snapshot ? `, disk=${snapshot.estimatedTokens}t` : "";
+        const cached = snapshot ? `, disco=${snapshot.estimatedTokens}t` : "";
         const speed = event.tokensPerSecond ? `, ${event.tokensPerSecond} tok/s` : "";
         const latency = event.totalDurationMs ? `, ${Math.round(event.totalDurationMs / 100) / 10}s` : "";
-        setStatus(`Done. prompt=${event.promptEvalCount || 0}, output=${event.evalCount || 0}${speed}${latency}${cached}`);
+        setStatus(`Fatto. prompt=${event.promptEvalCount || 0}, output=${event.evalCount || 0}${speed}${latency}${cached}`);
       }
     });
   } catch (error) {
-    assistant.content = `Backend error: ${error.message}`;
-    setStatus("Backend unavailable", true);
+    assistant.content = `Errore backend: ${error.message}`;
+    setStatus("Backend non disponibile", true);
     render();
   } finally {
     sendEl.disabled = false;
@@ -413,27 +142,10 @@ promptEl.addEventListener("keydown", (event) => {
 clearEl.addEventListener("click", () => {
   messages.splice(0, messages.length, {
     role: "assistant",
-    content: "New IronMind session."
+    content: "Nuova chat pronta. Scrivimi pure."
   });
-  setStatus("Ready");
+  setStatus("Pronto");
   render();
-});
-
-clinicalFileEl.addEventListener("change", () => {
-  const file = clinicalFileEl.files?.[0];
-  if (file) prepareClinicalImage(file);
-});
-
-clinicalAnalyzeEl.addEventListener("click", () => {
-  analyzeClinicalImage();
-});
-
-clinicalDemoEl.addEventListener("click", () => {
-  runDemoClinicalCase();
-});
-
-clinicalExportEl.addEventListener("click", () => {
-  exportClinicalCase();
 });
 
 async function loadHealth() {
@@ -445,13 +157,13 @@ async function loadHealth() {
     kvDiskEl.value = health.kvDiskDir;
     cpuModeEl.value = cpuModeText(health.cpuPerformance);
     if (messages.length === 1 && messages[0].role === "assistant") {
-      messages[0].content = `${health.displayName || health.model} is ready.`;
+      messages[0].content = `${health.displayName || health.model} e pronto. Parlo italiano.`;
       render();
     }
     const files = health.contextStore?.files || 0;
-    setStatus(`Backend: ${health.backend}; ${cpuModeText(health.cpuPerformance)}; disk files=${files}`);
+    setStatus(`Backend: ${health.backend}; ${cpuModeText(health.cpuPerformance)}; file disco=${files}`);
   } catch {
-    setStatus("Health check failed", true);
+    setStatus("Controllo health fallito", true);
   }
 }
 

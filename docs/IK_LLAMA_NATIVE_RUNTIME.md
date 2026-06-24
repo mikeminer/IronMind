@@ -5,7 +5,7 @@
 IronMind should use CPU-optimised local inference as its primary runtime path.
 The practical path is:
 
-1. IronMind owns API, UI, session persistence, clinical screening, and orchestration.
+1. IronMind owns API, UI, session persistence, and chat orchestration.
 2. `ik_llama.cpp` owns GGUF execution, CPU kernels, quantized matmul, KV cache, and token generation.
 3. The first integration runs `ik_llama.cpp` through its `llama-server` process.
 4. A later integration can replace the process boundary with direct native linking or a small C ABI.
@@ -38,10 +38,10 @@ IronMind will start `llama-server` with:
 Then IronMind routes chat through the OpenAI-compatible
 `/v1/chat/completions` endpoint exposed by `llama-server`.
 
-The public product name for this managed CPU path is **IronMind Sentinel**,
-with API model id `ironmind-sentinel`. `ik_llama.cpp` remains the runtime, and
-the GGUF path is only a runtime configuration detail. For GGUF chat templates
-that emit hidden thinking text, Sentinel removes any residual
+The public product name for this managed CPU path is **IronMind Vox**, with API
+model id `ironmind-vox`. `ik_llama.cpp` remains the runtime, and the GGUF path
+is only a runtime configuration detail. Vox speaks Italian by default. For GGUF
+chat templates that emit hidden thinking text, Vox removes any residual
 `<think>...</think>` block before returning data to `/api/chat`,
 `/v1/chat/completions`, `/v1/responses`, or `/v1/messages`. Requests that set
 `think: true`, `reasoning`, or `reasoning_effort` keep reasoning mode available.
@@ -51,9 +51,8 @@ Validated locally on Windows with `ik_llama.cpp` commit `d5507e33`,
 `ctx=4096`, `batch=128`, and six CPU threads. Smoke tests covered:
 
 - `GET /health` reporting `backendMode: "ik_llama"` and `cpuOnly: true`;
-- `POST /v1/chat/completions` returning an `ironmind-sentinel` answer without `<think>` tags;
+- `POST /v1/chat/completions` returning an `ironmind-vox` Italian answer without `<think>` tags;
 - `POST /api/chat` returning NDJSON consumed by the browser chatbot;
-- `POST /v1/clinical/screening` returning an `ironmind.clinical-screening-case.v1`.
 
 ## Why Process First
 
@@ -78,4 +77,4 @@ adapter:
   internal transport from HTTP to direct native calls.
 
 The public product should not change when this happens: the UI, `/api/chat`,
-`/v1/chat/completions`, and clinical screening APIs stay stable.
+`/v1/chat/completions`, `/v1/responses`, and `/v1/messages` stay stable.

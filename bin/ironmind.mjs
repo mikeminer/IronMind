@@ -24,9 +24,6 @@ import {
   shouldUseNativeBackend
 } from "../lib/nativeBackend.mjs";
 import { canonicalizeMessages, canonicalizeTools, canonicalizeToolCalls } from "../lib/toolCalls.mjs";
-import { createClinicalTriage } from "../lib/clinicalScoring.mjs";
-import { assessImageQuality } from "../lib/imageQuality.mjs";
-import { createClinicalScreeningCase } from "../lib/clinicalScreening.mjs";
 import {
   applyCpuPerformanceOptions,
   defaultCpuThreads,
@@ -42,8 +39,8 @@ const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
 const publicDir = path.join(rootDir, "public");
 const configPath = path.join(os.homedir(), ".ironmind", "ironmind.json");
-const ikLlamaProductModel = "ironmind-sentinel";
-const ikLlamaProductName = "IronMind Sentinel";
+const ikLlamaProductModel = "ironmind-vox";
+const ikLlamaProductName = "IronMind Vox";
 let managedIkLlamaProcess = null;
 
 const defaults = {
@@ -193,7 +190,7 @@ function usage() {
   console.log(`IronMind
 
 Usage:
-  ironmind [serve] [--host 127.0.0.1] [--port 4141] [--model qwen3-coder:30b] [--ctx 131072]
+  ironmind [serve] [--host 127.0.0.1] [--port 4141] [--model ironmind-vox] [--ctx 4096]
            [--kv-disk-dir ~/.ironmind/kvcache] [--kv-disk-space-mb 16384]
            [--backend auto|ollama|native|llama|ik_llama] [--native-model C:\\path\\to\\model.gguf]
            [--llama-url http://127.0.0.1:8080]
@@ -919,33 +916,6 @@ async function handleAnthropicMessages(req, res, config) {
   }
 }
 
-async function handleClinicalTriage(req, res) {
-  try {
-    const body = await readJson(req);
-    return json(res, 200, createClinicalTriage(body, { thresholds: body.thresholds }));
-  } catch (error) {
-    json(res, 400, { error: { message: error.message, type: "invalid_clinical_triage_request" } });
-  }
-}
-
-async function handleClinicalImageQuality(req, res) {
-  try {
-    const body = await readJson(req);
-    return json(res, 200, assessImageQuality(body, body.options || {}));
-  } catch (error) {
-    json(res, 400, { error: { message: error.message, type: "invalid_image_quality_request" } });
-  }
-}
-
-async function handleClinicalScreening(req, res) {
-  try {
-    const body = await readJson(req);
-    return json(res, 200, createClinicalScreeningCase(body, body.options || {}));
-  } catch (error) {
-    json(res, 400, { error: { message: error.message, type: "invalid_clinical_screening_request" } });
-  }
-}
-
 function handleModels(res, config) {
   json(res, 200, {
     object: "list",
@@ -1010,18 +980,6 @@ function createServer(config) {
 
     if (req.method === "POST" && url.pathname === "/v1/messages") {
       return handleAnthropicMessages(req, res, config);
-    }
-
-    if (req.method === "POST" && url.pathname === "/v1/clinical/triage") {
-      return handleClinicalTriage(req, res);
-    }
-
-    if (req.method === "POST" && url.pathname === "/v1/clinical/image/quality") {
-      return handleClinicalImageQuality(req, res);
-    }
-
-    if (req.method === "POST" && url.pathname === "/v1/clinical/screening") {
-      return handleClinicalScreening(req, res);
     }
 
     if (req.method === "GET") return serveStatic(req, res);
