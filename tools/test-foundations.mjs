@@ -12,6 +12,10 @@ import { tensorSizeBytes } from "../lib/tensorMap.mjs";
 import { canonicalJson, canonicalizeToolCalls, extractToolCallsFromText } from "../lib/toolCalls.mjs";
 import { backendDescription, isGgufModel, shouldUseNativeBackend } from "../lib/nativeBackend.mjs";
 import {
+  addQwen3ThinkingDirective,
+  stripQwenThinking
+} from "../lib/qwenThinking.mjs";
+import {
   aggregateModelOutputs,
   createClinicalTriage,
   scoreImageQuality,
@@ -35,6 +39,20 @@ const prompt = renderQwen3Chat([
 ], { think: false });
 
 assert.equal(prompt, "<|im_start|>system\nYou are IronMind.\n<|im_end|>\n<|im_start|>user\nCiao /no_think<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n");
+
+const llamaQwenPayload = addQwen3ThinkingDirective({
+  model: "qwen3:14b",
+  messages: [{ role: "user", content: "Ciao" }]
+});
+assert.equal(llamaQwenPayload.messages[0].content, "Ciao /no_think");
+const llamaQwenReasoningPayload = addQwen3ThinkingDirective({
+  model: "qwen3:14b",
+  think: true,
+  messages: [{ role: "user", content: "Ciao /think" }]
+});
+assert.equal(llamaQwenReasoningPayload.messages[0].content, "Ciao /think");
+assert.equal(stripQwenThinking("<think>\ninternal\n</think>\nRisposta finale"), "Risposta finale");
+assert.equal(stripQwenThinking("<think>\nunfinished"), "");
 
 const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ironmind-"));
 const extensionlessGguf = path.join(dir, "ollama-blob");

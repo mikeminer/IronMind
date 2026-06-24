@@ -78,6 +78,11 @@ IronMind starts `llama-server` with CPU-only flags, including `--n-gpu-layers 0`
 prefer to run the server yourself, set `IRONMIND_BACKEND=llama` and
 `IRONMIND_LLAMA_URL=http://127.0.0.1:8080`.
 
+For Qwen3 models on `llama-server`/`ik_llama`, IronMind adds `/no_think` by
+default and strips any residual `<think>` block from the visible assistant
+message. Set `think: true` or a reasoning flag in the request when you
+explicitly want reasoning mode.
+
 The integration plan is tracked in `docs/IK_LLAMA_NATIVE_RUNTIME.md`.
 
 ## Design

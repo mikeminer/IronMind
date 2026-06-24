@@ -33,6 +33,10 @@ import {
   ensureCpuSystemMessage,
   resolveCpuPerformanceConfig
 } from "../lib/cpuPerformance.mjs";
+import {
+  addQwen3ThinkingDirective,
+  stripQwenThinkingFromMessage
+} from "../lib/qwenThinking.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
@@ -422,17 +426,18 @@ function isLlamaCompatibleBackend(config) {
 }
 
 function llamaRequestBody(config, payload = {}, stream = false) {
+  const preparedPayload = addQwen3ThinkingDirective(payload, config.model);
   const { options } = applyCpuPerformanceOptions(config, payload);
   const body = {
-    model: payload.model || config.model,
-    messages: payload.messages || [],
+    model: preparedPayload.model || config.model,
+    messages: preparedPayload.messages || [],
     stream,
     temperature: options.temperature,
     top_p: options.top_p,
     max_tokens: options.num_predict
   };
-  if (payload.tools?.length) body.tools = payload.tools;
-  if (payload.tool_choice) body.tool_choice = payload.tool_choice;
+  if (preparedPayload.tools?.length) body.tools = preparedPayload.tools;
+  if (preparedPayload.tool_choice) body.tool_choice = preparedPayload.tool_choice;
   return body;
 }
 
@@ -457,9 +462,10 @@ async function completeLlamaChat(config, payload) {
   const response = await llamaChat(config, payload, false);
   const out = await response.json();
   const choice = out.choices?.[0] || {};
+  const message = stripQwenThinkingFromMessage(choice.message || { role: "assistant", content: choice.text || "" });
   return {
     model: out.model || payload.model || config.model,
-    message: choice.message || { role: "assistant", content: choice.text || "" },
+    message,
     prompt_eval_count: out.usage?.prompt_tokens || 0,
     eval_count: out.usage?.completion_tokens || 0,
     done: true,
