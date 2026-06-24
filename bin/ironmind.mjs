@@ -3,7 +3,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { inspectGguf, summarizeGguf } from "../lib/gguf.mjs";
 import { validateIronMindTarget } from "../lib/target.mjs";
@@ -38,6 +38,7 @@ const __filename = fileURLToPath(import.meta.url);
 const rootDir = path.resolve(path.dirname(__filename), "..");
 const publicDir = path.join(rootDir, "public");
 const configPath = path.join(os.homedir(), ".ironmind", "ironmind.json");
+let managedIkLlamaProcess = null;
 
 const defaults = {
   host: "127.0.0.1",
@@ -47,6 +48,14 @@ const defaults = {
   kvDiskDir: defaultContextDir(),
   kvDiskSpaceMb: 16384,
   ollamaUrl: "http://127.0.0.1:11434",
+  llamaUrl: "http://127.0.0.1:8080",
+  llamaApiKey: "",
+  ikLlamaServer: "",
+  ikLlamaModel: "",
+  ikLlamaHost: "127.0.0.1",
+  ikLlamaPort: 8080,
+  ikLlamaAutoStart: true,
+  ikLlamaStartupTimeoutMs: 30000,
   backend: "auto",
   nativeModel: "",
   nativeMaxTokens: 16,
@@ -70,6 +79,14 @@ function readUserConfig() {
     if (parsed.kvDiskDir) config.kvDiskDir = parsed.kvDiskDir;
     if (parsed.kvDiskSpaceMb) config.kvDiskSpaceMb = parsed.kvDiskSpaceMb;
     if (parsed.ollamaUrl) config.ollamaUrl = parsed.ollamaUrl;
+    if (parsed.llamaUrl) config.llamaUrl = parsed.llamaUrl;
+    if (parsed.llamaApiKey) config.llamaApiKey = parsed.llamaApiKey;
+    if (parsed.ikLlamaServer) config.ikLlamaServer = parsed.ikLlamaServer;
+    if (parsed.ikLlamaModel) config.ikLlamaModel = parsed.ikLlamaModel;
+    if (parsed.ikLlamaHost) config.ikLlamaHost = parsed.ikLlamaHost;
+    if (parsed.ikLlamaPort) config.ikLlamaPort = Number(parsed.ikLlamaPort);
+    if (parsed.ikLlamaAutoStart !== undefined) config.ikLlamaAutoStart = parsed.ikLlamaAutoStart;
+    if (parsed.ikLlamaStartupTimeoutMs) config.ikLlamaStartupTimeoutMs = Number(parsed.ikLlamaStartupTimeoutMs);
     if (parsed.backend) config.backend = parsed.backend;
     if (parsed.nativeModel) config.nativeModel = parsed.nativeModel;
     if (parsed.nativeMaxTokens) config.nativeMaxTokens = Number(parsed.nativeMaxTokens);
@@ -102,6 +119,13 @@ function parseArgs(argv) {
     else if (arg === "--kv-disk-dir" && next) config.kvDiskDir = path.resolve(next), i += 1;
     else if (arg === "--kv-disk-space-mb" && next) config.kvDiskSpaceMb = Number(next), i += 1;
     else if (arg === "--ollama" && next) config.ollamaUrl = next, i += 1;
+    else if (arg === "--llama-url" && next) config.llamaUrl = next, i += 1;
+    else if (arg === "--llama-api-key" && next) config.llamaApiKey = next, i += 1;
+    else if (arg === "--ik-llama-server" && next) config.ikLlamaServer = path.resolve(next), i += 1;
+    else if (arg === "--ik-llama-model" && next) config.ikLlamaModel = path.resolve(next), i += 1;
+    else if (arg === "--ik-llama-host" && next) config.ikLlamaHost = next, i += 1;
+    else if (arg === "--ik-llama-port" && next) config.ikLlamaPort = Number(next), i += 1;
+    else if (arg === "--no-ik-llama-autostart") config.ikLlamaAutoStart = false;
     else if (arg === "--backend" && next) config.backend = next, i += 1;
     else if (arg === "--native-model" && next) config.nativeModel = path.resolve(next), i += 1;
     else if (arg === "--native-max-tokens" && next) config.nativeMaxTokens = Number(next), i += 1;
@@ -123,6 +147,16 @@ function parseArgs(argv) {
   config.kvDiskDir = path.resolve(process.env.IRONMIND_KV_DISK_DIR || config.kvDiskDir);
   config.kvDiskSpaceMb = Number(process.env.IRONMIND_KV_DISK_SPACE_MB || config.kvDiskSpaceMb);
   config.ollamaUrl = process.env.IRONMIND_OLLAMA_URL || config.ollamaUrl;
+  config.llamaUrl = process.env.IRONMIND_LLAMA_URL || config.llamaUrl;
+  config.llamaApiKey = process.env.IRONMIND_LLAMA_API_KEY || config.llamaApiKey;
+  config.ikLlamaServer = process.env.IRONMIND_IK_LLAMA_SERVER || config.ikLlamaServer;
+  config.ikLlamaModel = process.env.IRONMIND_IK_LLAMA_MODEL || config.ikLlamaModel;
+  config.ikLlamaHost = process.env.IRONMIND_IK_LLAMA_HOST || config.ikLlamaHost;
+  config.ikLlamaPort = Number(process.env.IRONMIND_IK_LLAMA_PORT || config.ikLlamaPort);
+  config.ikLlamaAutoStart = process.env.IRONMIND_IK_LLAMA_AUTOSTART === undefined
+    ? config.ikLlamaAutoStart
+    : !["0", "false", "no", "off"].includes(String(process.env.IRONMIND_IK_LLAMA_AUTOSTART).toLowerCase());
+  config.ikLlamaStartupTimeoutMs = Number(process.env.IRONMIND_IK_LLAMA_STARTUP_TIMEOUT_MS || config.ikLlamaStartupTimeoutMs);
   config.backend = process.env.IRONMIND_BACKEND || config.backend;
   config.nativeModel = process.env.IRONMIND_NATIVE_MODEL || config.nativeModel;
   config.nativeMaxTokens = Number(process.env.IRONMIND_NATIVE_MAX_TOKENS || config.nativeMaxTokens);
@@ -138,7 +172,13 @@ function parseArgs(argv) {
   config.cpuKeepAlive = process.env.IRONMIND_CPU_KEEP_ALIVE || config.cpuKeepAlive;
   if (config.nativeModel) config.nativeModel = path.resolve(config.nativeModel);
   config.ollamaUrl = config.ollamaUrl.replace(/\/+$/, "");
-  if (!["auto", "ollama", "native"].includes(config.backend)) config.backend = "auto";
+  if (config.ikLlamaServer) config.ikLlamaServer = path.resolve(config.ikLlamaServer);
+  if (config.ikLlamaModel) config.ikLlamaModel = path.resolve(config.ikLlamaModel);
+  if (config.backend === "ik_llama") {
+    config.llamaUrl = `http://${config.ikLlamaHost}:${config.ikLlamaPort}`;
+  }
+  config.llamaUrl = config.llamaUrl.replace(/\/+$/, "");
+  if (!["auto", "ollama", "native", "llama", "ik_llama"].includes(config.backend)) config.backend = "auto";
   Object.assign(config, resolveCpuPerformanceConfig(config));
   return { command, config };
 }
@@ -149,7 +189,9 @@ function usage() {
 Usage:
   ironmind [serve] [--host 127.0.0.1] [--port 4141] [--model qwen3-coder:30b] [--ctx 131072]
            [--kv-disk-dir ~/.ironmind/kvcache] [--kv-disk-space-mb 16384]
-           [--backend auto|ollama|native] [--native-model C:\\path\\to\\model.gguf]
+           [--backend auto|ollama|native|llama|ik_llama] [--native-model C:\\path\\to\\model.gguf]
+           [--llama-url http://127.0.0.1:8080]
+           [--ik-llama-server C:\\path\\to\\llama-server.exe --ik-llama-model C:\\path\\to\\model.gguf]
            [--native-max-tokens 16] [--native-timeout-ms 300000]
            [--cpu-profile low-latency|balanced|full-context] [--cpu-threads N]
            [--cpu-batch N] [--cpu-ctx N] [--cpu-max-tokens N] [--cpu-keep-alive 30m]
@@ -166,6 +208,13 @@ Environment:
   IRONMIND_KV_DISK_SPACE_MB
   IRONMIND_PORT
   IRONMIND_OLLAMA_URL
+  IRONMIND_LLAMA_URL
+  IRONMIND_LLAMA_API_KEY
+  IRONMIND_IK_LLAMA_SERVER
+  IRONMIND_IK_LLAMA_MODEL
+  IRONMIND_IK_LLAMA_HOST
+  IRONMIND_IK_LLAMA_PORT
+  IRONMIND_IK_LLAMA_AUTOSTART
   IRONMIND_BACKEND
   IRONMIND_NATIVE_MODEL
   IRONMIND_NATIVE_MAX_TOKENS
@@ -199,6 +248,79 @@ function text(res, status, body, contentType = "text/plain; charset=utf-8") {
 
 function notFound(res) {
   json(res, 404, { error: "not_found" });
+}
+
+async function waitForHttp(url, timeoutMs = 30000) {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+  while (Date.now() < deadline) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.min(1000, Math.max(1, deadline - Date.now())));
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (response.ok || response.status === 404 || response.status === 405) return true;
+      lastError = new Error(`HTTP ${response.status}`);
+    } catch (error) {
+      lastError = error;
+    } finally {
+      clearTimeout(timer);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  throw new Error(`Timed out waiting for ${url}${lastError ? ` (${lastError.message})` : ""}`);
+}
+
+async function isHttpReachable(url) {
+  try {
+    await waitForHttp(url, 500);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function ikLlamaArgs(config) {
+  const cpu = resolveCpuPerformanceConfig(config);
+  const args = [
+    "--model", config.ikLlamaModel,
+    "--host", config.ikLlamaHost,
+    "--port", String(config.ikLlamaPort),
+    "--ctx-size", String(cpu.interactiveContext || config.ctx),
+    "--threads", String(cpu.threads),
+    "--batch-size", String(cpu.batch),
+    "--n-gpu-layers", "0"
+  ];
+  return args;
+}
+
+async function ensureIkLlamaRuntime(config) {
+  if (config.backend !== "ik_llama" || !config.ikLlamaAutoStart) return { managed: false, started: false };
+  if (await isHttpReachable(`${config.llamaUrl}/health`)) return { managed: false, started: false, alreadyRunning: true };
+  if (!config.ikLlamaServer || !config.ikLlamaModel) {
+    throw new Error("ik_llama backend requires IRONMIND_IK_LLAMA_SERVER and IRONMIND_IK_LLAMA_MODEL.");
+  }
+  if (!fs.existsSync(config.ikLlamaServer)) throw new Error(`ik_llama server not found: ${config.ikLlamaServer}`);
+  if (!fs.existsSync(config.ikLlamaModel)) throw new Error(`ik_llama model not found: ${config.ikLlamaModel}`);
+
+  const args = ikLlamaArgs(config);
+  managedIkLlamaProcess = spawn(config.ikLlamaServer, args, {
+    cwd: path.dirname(config.ikLlamaServer),
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+  managedIkLlamaProcess.stdout?.setEncoding("utf8");
+  managedIkLlamaProcess.stderr?.setEncoding("utf8");
+  managedIkLlamaProcess.stdout?.on("data", (chunk) => process.stdout.write(`[ik_llama] ${chunk}`));
+  managedIkLlamaProcess.stderr?.on("data", (chunk) => process.stderr.write(`[ik_llama] ${chunk}`));
+  managedIkLlamaProcess.on("exit", (code, signal) => {
+    if (managedIkLlamaProcess) {
+      console.log(`ik_llama runtime exited (${signal || code})`);
+      managedIkLlamaProcess = null;
+    }
+  });
+
+  await waitForHttp(`${config.llamaUrl}/health`, Number(config.ikLlamaStartupTimeoutMs || 30000));
+  return { managed: true, started: true, pid: managedIkLlamaProcess.pid, args };
 }
 
 async function readJson(req) {
@@ -295,6 +417,56 @@ async function ollamaChat(config, payload, stream) {
   return response;
 }
 
+function isLlamaCompatibleBackend(config) {
+  return config.backend === "llama" || config.backend === "ik_llama";
+}
+
+function llamaRequestBody(config, payload = {}, stream = false) {
+  const { options } = applyCpuPerformanceOptions(config, payload);
+  const body = {
+    model: payload.model || config.model,
+    messages: payload.messages || [],
+    stream,
+    temperature: options.temperature,
+    top_p: options.top_p,
+    max_tokens: options.num_predict
+  };
+  if (payload.tools?.length) body.tools = payload.tools;
+  if (payload.tool_choice) body.tool_choice = payload.tool_choice;
+  return body;
+}
+
+async function llamaChat(config, payload, stream = false) {
+  const headers = { "content-type": "application/json" };
+  if (config.llamaApiKey) headers.authorization = `Bearer ${config.llamaApiKey}`;
+  const response = await fetch(`${config.llamaUrl}/v1/chat/completions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(llamaRequestBody(config, payload, stream))
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`llama-server ${response.status}: ${detail}`);
+  }
+
+  return response;
+}
+
+async function completeLlamaChat(config, payload) {
+  const response = await llamaChat(config, payload, false);
+  const out = await response.json();
+  const choice = out.choices?.[0] || {};
+  return {
+    model: out.model || payload.model || config.model,
+    message: choice.message || { role: "assistant", content: choice.text || "" },
+    prompt_eval_count: out.usage?.prompt_tokens || 0,
+    eval_count: out.usage?.completion_tokens || 0,
+    done: true,
+    raw: out
+  };
+}
+
 async function eachNdjson(response, onObject) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -346,6 +518,26 @@ async function handleUiChat(req, res, config) {
         "cache-control": "no-cache"
       });
       if (out.message?.content) res.write(JSON.stringify({ type: "delta", content: out.message.content }) + "\n");
+      if (out.message?.tool_calls?.length) res.write(JSON.stringify({ type: "tool_calls", toolCalls: out.message.tool_calls }) + "\n");
+      res.write(JSON.stringify({
+        type: "done",
+        model: out.model,
+        promptEvalCount: out.prompt_eval_count,
+        evalCount: out.eval_count,
+        contextSnapshot
+      }) + "\n");
+      return res.end();
+    }
+
+    if (isLlamaCompatibleBackend(config)) {
+      const contextSnapshot = await saveContextSnapshot(config, body);
+      const out = await completeLlamaChat(config, body);
+      res.writeHead(200, {
+        "content-type": "application/x-ndjson; charset=utf-8",
+        "cache-control": "no-cache"
+      });
+      const content = chunkText(out);
+      if (content) res.write(JSON.stringify({ type: "delta", content }) + "\n");
       if (out.message?.tool_calls?.length) res.write(JSON.stringify({ type: "tool_calls", toolCalls: out.message.tool_calls }) + "\n");
       res.write(JSON.stringify({
         type: "done",
@@ -435,6 +627,47 @@ async function handleOpenAiChat(req, res, config) {
       return res.end();
     }
 
+    if (isLlamaCompatibleBackend(config)) {
+      const contextSnapshot = await saveContextSnapshot(config, body);
+      const out = await completeLlamaChat(config, body);
+      const message = openAiMessageFromBackend(out);
+      if (body.stream === false) {
+        return json(res, 200, {
+          id: `chatcmpl-${Date.now()}`,
+          object: "chat.completion",
+          created: Math.floor(Date.now() / 1000),
+          model: out.model || model,
+          choices: [
+            {
+              index: 0,
+              message,
+              finish_reason: finishReasonForMessage(message)
+            }
+          ],
+          usage: {
+            prompt_tokens: out.prompt_eval_count || 0,
+            completion_tokens: out.eval_count || 0,
+            total_tokens: (out.prompt_eval_count || 0) + (out.eval_count || 0)
+          },
+          ironmind: { contextSnapshot, backend: config.backend }
+        });
+      }
+
+      const id = `chatcmpl-${Date.now()}`;
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache",
+        connection: "keep-alive"
+      });
+      if (message.content) res.write(`data: ${JSON.stringify(openAiChunk(id, model, message.content))}\n\n`);
+      const done = openAiChunk(id, model, "", finishReasonForMessage(message));
+      if (message.tool_calls?.length) done.choices[0].delta.tool_calls = message.tool_calls;
+      done.ironmind = { contextSnapshot, backend: config.backend };
+      res.write(`data: ${JSON.stringify(done)}\n\n`);
+      res.write("data: [DONE]\n\n");
+      return res.end();
+    }
+
     const contextSnapshot = await saveContextSnapshot(config, body);
 
     if (body.stream === false) {
@@ -493,6 +726,10 @@ async function completeChatOnce(config, body) {
     return { ...result, backend: "native" };
   }
   const contextSnapshot = await saveContextSnapshot(config, payload);
+  if (isLlamaCompatibleBackend(config)) {
+    const out = await completeLlamaChat(config, payload);
+    return { payload, out, contextSnapshot, backend: config.backend };
+  }
   const response = await ollamaChat(config, payload, false);
   const out = await response.json();
   return { payload, out, contextSnapshot, backend: "ollama" };
@@ -715,6 +952,15 @@ function createServer(config) {
         context: config.ctx,
         backend: backendDescription(config),
         backendMode: config.backend,
+        llamaUrl: config.llamaUrl,
+        ikLlama: {
+          server: config.ikLlamaServer || null,
+          model: config.ikLlamaModel || null,
+          host: config.ikLlamaHost,
+          port: config.ikLlamaPort,
+          autoStart: config.ikLlamaAutoStart,
+          managedPid: managedIkLlamaProcess?.pid || null
+        },
         cpuPerformance: resolveCpuPerformanceConfig(config),
         nativeModel: config.nativeModel || null,
         nativeCandidate: nativeModelPath(config, { model: config.model }),
@@ -771,6 +1017,7 @@ async function doctor(config) {
   console.log(`  kv cap:  ${config.kvDiskSpaceMb} MB`);
   console.log(`  runtime: ${backendDescription(config)}`);
   console.log(`  ollama:  ${config.ollamaUrl}`);
+  console.log(`  llama:   ${config.llamaUrl}`);
   const cpu = resolveCpuPerformanceConfig(config);
   console.log(`  cpu mode: ${cpu.cpuOnly ? "CPU-only (num_gpu=0)" : "GPU allowed by config"}`);
   console.log(`  cpu profile: ${cpu.profile}, ctx=${cpu.interactiveContext || "full"}, threads=${cpu.threads}, batch=${cpu.batch}, max_tokens=${cpu.maxTokens}`);
@@ -783,6 +1030,21 @@ async function doctor(config) {
     console.log(`  native runner: ${runnerOk ? runner : "not built"}`);
     console.log(`  native model:  ${modelOk ? modelPath : "not configured"}`);
     if (!runnerOk || !modelOk) process.exitCode = 1;
+    return;
+  }
+
+  if (isLlamaCompatibleBackend(config)) {
+    if (config.backend === "ik_llama") {
+      console.log(`  ik server: ${config.ikLlamaServer || "not configured"}`);
+      console.log(`  ik model:  ${config.ikLlamaModel || "not configured"}`);
+    }
+    try {
+      await waitForHttp(`${config.llamaUrl}/health`, 1000);
+      console.log("  backend: reachable");
+    } catch (error) {
+      console.log(`  backend: not reachable (${error.message})`);
+      process.exitCode = 1;
+    }
     return;
   }
 
@@ -877,11 +1139,13 @@ async function main() {
   if (command === "native") return nativeModel(process.argv.slice(3));
   if (command !== "serve") return usage();
 
+  const ikRuntime = await ensureIkLlamaRuntime(config);
   const server = createServer(config);
   server.listen(config.port, config.host, () => {
     console.log(`IronMind listening on http://${config.host}:${config.port}`);
     console.log(`Model: ${config.model}`);
-    console.log(`Backend: ${config.ollamaUrl}`);
+    console.log(`Backend: ${backendDescription(config)}`);
+    if (ikRuntime.started) console.log(`ik_llama managed runtime pid: ${ikRuntime.pid}`);
   });
 }
 

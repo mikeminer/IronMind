@@ -43,6 +43,43 @@ IronMind now defaults to a CPU-only runtime policy for interactive inference:
 
 The default profile is `low-latency`: `ctx=4096`, `max_tokens=128`, `batch=128`, and CPU threads selected from the local machine. Use `balanced` or `full-context` only when longer context matters more than response latency.
 
+### Native ik_llama.cpp CPU Runtime
+
+For CPU-first local inference, IronMind can run through `ik_llama.cpp` instead of
+Ollama. IronMind stays the API/UI/orchestration layer, while `ik_llama.cpp`
+provides the CPU-optimised GGUF runtime. This is the intended path for making
+IronMind native local inference on CPU without GPU dependency.
+
+`ik_llama.cpp` is useful because it focuses on CPU performance, row-interleaved
+quant packing, newer IQK/Trellis quantization paths, and faster CPU prompt
+processing.
+
+Build `ik_llama.cpp` for CPU:
+
+```powershell
+git clone https://github.com/ikawrakow/ik_llama.cpp C:\ai\ik_llama.cpp
+cd C:\ai\ik_llama.cpp
+cmake -B build -DGGML_NATIVE=ON
+cmake --build build --config Release
+```
+
+Run IronMind with a managed `ik_llama.cpp` server:
+
+```powershell
+$env:IRONMIND_BACKEND="ik_llama"
+$env:IRONMIND_IK_LLAMA_SERVER="C:\ai\ik_llama.cpp\build\bin\Release\llama-server.exe"
+$env:IRONMIND_IK_LLAMA_MODEL="C:\models\qwen3.gguf"
+$env:IRONMIND_CPU_ONLY="true"
+ironmind
+```
+
+IronMind starts `llama-server` with CPU-only flags, including `--n-gpu-layers 0`,
+`--ctx-size`, `--threads`, and `--batch-size` from the active CPU profile. If you
+prefer to run the server yourself, set `IRONMIND_BACKEND=llama` and
+`IRONMIND_LLAMA_URL=http://127.0.0.1:8080`.
+
+The integration plan is tracked in `docs/IK_LLAMA_NATIVE_RUNTIME.md`.
+
 ## Design
 
 IronMind is organized around a vertical local stack:
@@ -137,7 +174,12 @@ IRONMIND_KV_DISK_DIR=C:\IronMindKV
 IRONMIND_KV_DISK_SPACE_MB=16384
 IRONMIND_PORT=4141
 IRONMIND_OLLAMA_URL=http://127.0.0.1:11434
-IRONMIND_BACKEND=auto
+IRONMIND_LLAMA_URL=http://127.0.0.1:8080
+IRONMIND_BACKEND=ik_llama
+IRONMIND_IK_LLAMA_SERVER=C:\ai\ik_llama.cpp\build\bin\Release\llama-server.exe
+IRONMIND_IK_LLAMA_MODEL=C:\models\qwen3.gguf
+IRONMIND_IK_LLAMA_HOST=127.0.0.1
+IRONMIND_IK_LLAMA_PORT=8080
 IRONMIND_NATIVE_MODEL=C:\path\to\model.gguf
 IRONMIND_CPU_ONLY=true
 IRONMIND_CPU_PROFILE=low-latency

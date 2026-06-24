@@ -10,7 +10,7 @@ import { saveContextSnapshot, contextStoreStats } from "../lib/contextStore.mjs"
 import { rmsNorm, applyRoPE, softmax, causalAttention } from "../lib/mathCore.mjs";
 import { tensorSizeBytes } from "../lib/tensorMap.mjs";
 import { canonicalJson, canonicalizeToolCalls, extractToolCallsFromText } from "../lib/toolCalls.mjs";
-import { isGgufModel } from "../lib/nativeBackend.mjs";
+import { backendDescription, isGgufModel, shouldUseNativeBackend } from "../lib/nativeBackend.mjs";
 import {
   aggregateModelOutputs,
   createClinicalTriage,
@@ -40,6 +40,10 @@ const dir = await fs.mkdtemp(path.join(os.tmpdir(), "ironmind-"));
 const extensionlessGguf = path.join(dir, "ollama-blob");
 await fs.writeFile(extensionlessGguf, Buffer.from("GGUF"));
 assert.equal(isGgufModel(extensionlessGguf), true);
+assert.equal(backendDescription({ backend: "llama", llamaUrl: "http://127.0.0.1:8080" }), "llama:http://127.0.0.1:8080");
+assert.equal(shouldUseNativeBackend({ backend: "llama", llamaUrl: "http://127.0.0.1:8080" }), false);
+assert.equal(backendDescription({ backend: "ik_llama", llamaUrl: "http://127.0.0.1:8080" }), "ik_llama:http://127.0.0.1:8080");
+assert.equal(shouldUseNativeBackend({ backend: "ik_llama", llamaUrl: "http://127.0.0.1:8080" }), false);
 
 assert.equal(defaultCpuThreads(16), 12);
 const cpuPerf = resolveCpuPerformanceConfig({
