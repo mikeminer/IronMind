@@ -68,7 +68,7 @@ const defaults = {
   cpuThreads: defaultCpuThreads(),
   cpuBatch: 128,
   cpuInteractiveCtx: 4096,
-  cpuMaxTokens: 128,
+  cpuMaxTokens: 256,
   cpuKeepAlive: "30m"
 };
 
@@ -432,9 +432,34 @@ function isLlamaCompatibleBackend(config) {
   return config.backend === "llama" || config.backend === "ik_llama";
 }
 
+const iurexaRuntimeUserDirective = [
+  "Istruzione runtime Iurexa: rispondi in italiano in modo conciso.",
+  "Se analizzi una clausola, rispondi esattamente in 5 righe: Sintesi, Punti critici, Rischio per il cliente, Modifica consigliata, Informazioni mancanti.",
+  "Non usare sottoelenchi nelle analisi clausole, non proporre numeri nuovi se non richiesti, e non chiamare il recesso revoca, restituzione, rimborso, ritorno o rimozione."
+].join(" ");
+
+function addIurexaRuntimeUserDirective(payload = {}, config = {}) {
+  if (config.backend !== "ik_llama" || !Array.isArray(payload.messages)) return payload;
+  const lastUserIndex = payload.messages
+    .map((message, index) => message?.role === "user" ? index : -1)
+    .filter((index) => index >= 0)
+    .pop();
+  if (lastUserIndex === undefined) return payload;
+
+  const messages = payload.messages.map((message, index) => {
+    if (index !== lastUserIndex) return message;
+    const content = message?.content == null ? "" : String(message.content);
+    if (content.includes("Istruzione runtime Iurexa:")) return message;
+    return { ...message, content: `${content.trimEnd()}\n\n${iurexaRuntimeUserDirective}` };
+  });
+
+  return { ...payload, messages };
+}
+
 function llamaRequestBody(config, payload = {}, stream = false) {
   const model = config.backend === "ik_llama" ? publicModelId(config) : (payload.model || config.model);
-  const preparedPayload = addQwen3ThinkingDirective({ ...payload, model }, config.model, {
+  const directedPayload = addIurexaRuntimeUserDirective({ ...payload, model }, config);
+  const preparedPayload = addQwen3ThinkingDirective(directedPayload, config.model, {
     force: config.backend === "ik_llama"
   });
   const { options } = applyCpuPerformanceOptions(config, payload);

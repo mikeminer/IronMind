@@ -38,7 +38,7 @@ IronMind now defaults to a CPU-only runtime policy for interactive inference:
 - sets CPU thread and batch options through `IRONMIND_CPU_THREADS` and `IRONMIND_CPU_BATCH`;
 - injects a runtime system message so the local chatbot does not claim GPU acceleration.
 
-The default profile is `low-latency`: `ctx=4096`, `max_tokens=128`, `batch=128`, and CPU threads selected from the local machine. Use `balanced` or `full-context` only when longer context matters more than response latency.
+The default profile is `low-latency`: `ctx=4096`, `max_tokens=256`, `batch=128`, and CPU threads selected from the local machine. Use `balanced` or `full-context` only when longer context matters more than response latency.
 
 ### Native ik_llama.cpp CPU Runtime
 
@@ -83,6 +83,9 @@ strips any residual `<think>` block from the visible assistant message unless
 you explicitly enable reasoning mode.
 
 The integration plan is tracked in `docs/IK_LLAMA_NATIVE_RUNTIME.md`.
+The reproducible Iurexa quantization path, including Italian legal calibration,
+`llama-imatrix`, IK-family quantization, benchmarks, and model selection, is in
+`docs/IUREXA_QUANTIZATION.md`.
 
 ## Design
 
@@ -123,7 +126,7 @@ IRONMIND_CPU_PROFILE=low-latency
 IRONMIND_CPU_THREADS=10
 IRONMIND_CPU_BATCH=128
 IRONMIND_CPU_CTX=4096
-IRONMIND_CPU_MAX_TOKENS=128
+IRONMIND_CPU_MAX_TOKENS=256
 IRONMIND_CPU_KEEP_ALIVE=30m
 IRONMIND_NATIVE_CACHE_MB=512
 IRONMIND_NATIVE_CACHE_MAX_TENSOR_MB=64

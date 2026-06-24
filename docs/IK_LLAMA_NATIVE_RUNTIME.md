@@ -47,12 +47,19 @@ tuned as a legal-support assistant. For GGUF chat templates that emit hidden thi
 `think: true`, `reasoning`, or `reasoning_effort` keep reasoning mode available.
 
 Validated locally on Windows with `ik_llama.cpp` commit `d5507e33`,
-`llama-server.exe`, `Qwen3 14B` GGUF `Q4_K - Medium`, `--n-gpu-layers 0`,
-`ctx=4096`, `batch=128`, and six CPU threads. Smoke tests covered:
+`llama-server.exe`, `--n-gpu-layers 0`, `ctx=4096`, `batch=128`, and six CPU
+threads. The default Iurexa Lite candidate is the 1.7B `IQ4_XS` GGUF produced
+with the Italian legal calibration corpus in `calibration/iurexa-legal-it.txt`.
+Smoke tests covered:
 
 - `GET /health` reporting `backendMode: "ik_llama"` and `cpuOnly: true`;
 - `POST /v1/chat/completions` returning an `iurexa` Italian answer without `<think>` tags;
 - `POST /api/chat` returning NDJSON consumed by the browser chatbot;
+
+The measured CPU-only tradeoff is documented in `docs/IUREXA_QUANTIZATION.md`:
+`IQ4_XS` is the default quality profile, while `IQ3_KS` is kept as a compact
+experimental profile because it is smaller but less reliable on Italian legal
+answers.
 
 ## Why Process First
 
