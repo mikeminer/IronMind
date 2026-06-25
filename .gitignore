@@ -7,3 +7,5 @@ build-ik/
 dist/
 coverage/
 .gitnexus
+models/**/*.gguf
+models/*.gguf
