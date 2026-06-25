@@ -82,9 +82,9 @@ This is a local MVP, not a full e-discovery engine:
 - scanned image PDFs need OCR before upload;
 - citations are chunk/page/paragraph references, not court-grade pinpoint cites;
 - retrieval is lexical and deterministic, not embedding-based yet;
-- the default `ik_worker` mode removes HTTP but reloads the model per request,
-  so `ik_llama` server mode is still faster for long interactive sessions;
-- `ik_embedded` removes the `llama-cli` dependency and links to `ik_llama.cpp`,
-  but it is still process-per-request until the persistent ABI lands;
-- the next step is a persistent embedded runtime ABI plus vector/semantic
-  retrieval for larger document sets.
+- `ik_worker` removes HTTP but reloads the model per request, so prefer
+  `ik_embedded` or `ik_llama` for long interactive sessions;
+- `ik_embedded` keeps the model loaded when `ironmind-ik-daemon` is available
+  and reuses the current prompt-prefix KV cache;
+- the next step is a true in-process ABI plus vector/semantic retrieval for
+  larger document sets and multiple independent long sessions.

@@ -4,7 +4,7 @@ Iurexa is a local Italian legal-support assistant powered by the IronMind CPU in
 
 Iurexa helps with legal orientation, issue spotting, document review, clause analysis, drafting, checklists, and preparation. It is designed as an assistant for professional work, not as a replacement for a licensed lawyer or for final legal advice on binding decisions.
 
-> Status: pre-alpha. The current bootstrap ships the server, chatbot, installer, document workflow, API shape, and CPU-only `ik_llama.cpp` runtimes. The fastest usable path is still a warm llama.cpp-compatible server, while `ik_worker` and `ik_embedded` remove the external HTTP server boundary for local-native experiments.
+> Status: pre-alpha. The current bootstrap ships the server, chatbot, installer, document workflow, API shape, and CPU-only `ik_llama.cpp` runtimes. The fastest native-local path is `ik_embedded` with the persistent daemon, which keeps the GGUF model loaded and reuses the current prompt-prefix KV cache without a `llama-server` HTTP hop.
 
 ## Install
 
@@ -96,15 +96,18 @@ For the direct embedded wrapper against the pinned submodule, build:
 npm run native:ik:build
 $env:IRONMIND_BACKEND="ik_embedded"
 $env:IRONMIND_IK_EMBEDDED_RUNNER=".\build-ik\Release\ironmind-ik-native.exe"
+$env:IRONMIND_IK_EMBEDDED_DAEMON=".\build-ik\Release\ironmind-ik-daemon.exe"
 $env:IRONMIND_IK_LLAMA_MODEL="C:\models\qwen3.gguf"
 $env:IRONMIND_CPU_ONLY="true"
 ironmind
 ```
 
 `ik_embedded` links to `ik_llama.cpp` through `llama.h` and renders prompts from
-IronMind directly, without `llama-server` or `llama-cli`. It is still launched as
-a local process per request while the final persistent C ABI/Node binding is
-being built.
+IronMind directly, without `llama-server` or `llama-cli`. When
+`ironmind-ik-daemon` is available, IronMind keeps one hidden native runtime
+alive, the model remains loaded in RAM, and repeated requests reuse the common
+prompt-prefix KV cache. If the daemon is missing, IronMind falls back to the
+one-shot `ironmind-ik-native` runner.
 
 When `IRONMIND_BACKEND=ik_worker`, `IRONMIND_BACKEND=ik_embedded`, or
 `IRONMIND_BACKEND=ik_llama`, the public
@@ -114,10 +117,10 @@ Italian by default, assumes Italy as the initial jurisdiction when none is
 provided, and strips any residual `<think>` block from the visible assistant
 message unless you explicitly enable reasoning mode.
 
-The next native milestone is turning the `ik_embedded` probe into a persistent
-C ABI/Node binding with reusable model state, direct token streaming, and direct
-KV cache restore/save. The current `ik_embedded` mode proves direct linking
-against `ik_llama.cpp`, but it still pays model-load cost per request.
+The next native milestone is replacing the persistent process boundary with a
+true C ABI/Node binding, then adding direct token streaming and multi-session KV
+restore/save. The current daemon already removes per-request model loading for
+the active runtime.
 
 The integration plan is tracked in `docs/IK_LLAMA_NATIVE_RUNTIME.md`.
 The reproducible Iurexa quantization path, including Italian legal calibration,
@@ -158,6 +161,8 @@ IRONMIND_BACKEND=ik_llama
 IRONMIND_IK_LLAMA_SERVER=C:\ai\ik_llama.cpp\build\bin\Release\llama-server.exe
 IRONMIND_IK_LLAMA_WORKER=C:\ai\ik_llama.cpp\build\bin\Release\llama-cli.exe
 IRONMIND_IK_EMBEDDED_RUNNER=C:\path\to\ironmind-ik-native.exe
+IRONMIND_IK_EMBEDDED_DAEMON=C:\path\to\ironmind-ik-daemon.exe
+IRONMIND_IK_EMBEDDED_PERSISTENT=true
 IRONMIND_IK_LLAMA_MODEL=C:\models\qwen3.gguf
 IRONMIND_IK_LLAMA_HOST=127.0.0.1
 IRONMIND_IK_LLAMA_PORT=8080

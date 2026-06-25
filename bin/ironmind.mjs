@@ -26,6 +26,7 @@ import {
 import {
   ikEmbeddedBackendDescription,
   ikEmbeddedChat,
+  ikEmbeddedDaemonPath,
   ikEmbeddedPath,
   isIkEmbeddedBackend
 } from "../lib/ikEmbedded.mjs";
@@ -78,6 +79,8 @@ const defaults = {
   ikLlamaWorker: "",
   ikLlamaWorkerTimeoutMs: 300000,
   ikEmbeddedRunner: "",
+  ikEmbeddedDaemon: "",
+  ikEmbeddedPersistent: true,
   ikEmbeddedTimeoutMs: 300000,
   ikLlamaHost: "127.0.0.1",
   ikLlamaPort: 8080,
@@ -115,6 +118,8 @@ function readUserConfig() {
     if (parsed.ikLlamaWorker) config.ikLlamaWorker = parsed.ikLlamaWorker;
     if (parsed.ikLlamaWorkerTimeoutMs) config.ikLlamaWorkerTimeoutMs = Number(parsed.ikLlamaWorkerTimeoutMs);
     if (parsed.ikEmbeddedRunner) config.ikEmbeddedRunner = parsed.ikEmbeddedRunner;
+    if (parsed.ikEmbeddedDaemon) config.ikEmbeddedDaemon = parsed.ikEmbeddedDaemon;
+    if (parsed.ikEmbeddedPersistent !== undefined) config.ikEmbeddedPersistent = parsed.ikEmbeddedPersistent;
     if (parsed.ikEmbeddedTimeoutMs) config.ikEmbeddedTimeoutMs = Number(parsed.ikEmbeddedTimeoutMs);
     if (parsed.ikLlamaHost) config.ikLlamaHost = parsed.ikLlamaHost;
     if (parsed.ikLlamaPort) config.ikLlamaPort = Number(parsed.ikLlamaPort);
@@ -161,6 +166,8 @@ function parseArgs(argv) {
     else if (arg === "--ik-llama-worker" && next) config.ikLlamaWorker = path.resolve(next), i += 1;
     else if (arg === "--ik-worker-timeout-ms" && next) config.ikLlamaWorkerTimeoutMs = Number(next), i += 1;
     else if (arg === "--ik-embedded-runner" && next) config.ikEmbeddedRunner = path.resolve(next), i += 1;
+    else if (arg === "--ik-embedded-daemon" && next) config.ikEmbeddedDaemon = path.resolve(next), i += 1;
+    else if (arg === "--no-ik-embedded-persistent") config.ikEmbeddedPersistent = false;
     else if (arg === "--ik-embedded-timeout-ms" && next) config.ikEmbeddedTimeoutMs = Number(next), i += 1;
     else if (arg === "--ik-llama-host" && next) config.ikLlamaHost = next, i += 1;
     else if (arg === "--ik-llama-port" && next) config.ikLlamaPort = Number(next), i += 1;
@@ -195,6 +202,10 @@ function parseArgs(argv) {
   config.ikLlamaWorker = process.env.IRONMIND_IK_LLAMA_WORKER || config.ikLlamaWorker;
   config.ikLlamaWorkerTimeoutMs = Number(process.env.IRONMIND_IK_WORKER_TIMEOUT_MS || config.ikLlamaWorkerTimeoutMs);
   config.ikEmbeddedRunner = process.env.IRONMIND_IK_EMBEDDED_RUNNER || config.ikEmbeddedRunner;
+  config.ikEmbeddedDaemon = process.env.IRONMIND_IK_EMBEDDED_DAEMON || config.ikEmbeddedDaemon;
+  config.ikEmbeddedPersistent = process.env.IRONMIND_IK_EMBEDDED_PERSISTENT === undefined
+    ? config.ikEmbeddedPersistent
+    : !["0", "false", "no", "off"].includes(String(process.env.IRONMIND_IK_EMBEDDED_PERSISTENT).toLowerCase());
   config.ikEmbeddedTimeoutMs = Number(process.env.IRONMIND_IK_EMBEDDED_TIMEOUT_MS || config.ikEmbeddedTimeoutMs);
   config.ikLlamaHost = process.env.IRONMIND_IK_LLAMA_HOST || config.ikLlamaHost;
   config.ikLlamaPort = Number(process.env.IRONMIND_IK_LLAMA_PORT || config.ikLlamaPort);
@@ -223,6 +234,7 @@ function parseArgs(argv) {
   if (config.ikLlamaModel) config.ikLlamaModel = path.resolve(config.ikLlamaModel);
   if (config.ikLlamaWorker) config.ikLlamaWorker = path.resolve(config.ikLlamaWorker);
   if (config.ikEmbeddedRunner) config.ikEmbeddedRunner = path.resolve(config.ikEmbeddedRunner);
+  if (config.ikEmbeddedDaemon) config.ikEmbeddedDaemon = path.resolve(config.ikEmbeddedDaemon);
   if (config.documentPython) config.documentPython = path.resolve(config.documentPython);
   if (config.backend === "ik_llama") {
     config.llamaUrl = `http://${config.ikLlamaHost}:${config.ikLlamaPort}`;
@@ -244,6 +256,7 @@ Usage:
            [--ik-llama-server C:\\path\\to\\llama-server.exe --ik-llama-model C:\\path\\to\\model.gguf]
            [--ik-llama-worker C:\\path\\to\\llama-cli.exe]
            [--ik-embedded-runner C:\\path\\to\\ironmind-ik-native.exe]
+           [--ik-embedded-daemon C:\\path\\to\\ironmind-ik-daemon.exe] [--no-ik-embedded-persistent]
            [--native-max-tokens 16] [--native-timeout-ms 300000]
            [--document-store-dir ~/.ironmind/documents] [--document-python C:\\path\\to\\python.exe]
            [--cpu-profile low-latency|balanced|full-context] [--cpu-threads N]
@@ -268,6 +281,8 @@ Environment:
   IRONMIND_IK_LLAMA_WORKER
   IRONMIND_IK_WORKER_TIMEOUT_MS
   IRONMIND_IK_EMBEDDED_RUNNER
+  IRONMIND_IK_EMBEDDED_DAEMON
+  IRONMIND_IK_EMBEDDED_PERSISTENT
   IRONMIND_IK_EMBEDDED_TIMEOUT_MS
   IRONMIND_IK_LLAMA_HOST
   IRONMIND_IK_LLAMA_PORT
@@ -1338,8 +1353,11 @@ function createServer(config) {
         },
         ikEmbedded: {
           executable: ikEmbeddedPath(config) || null,
+          daemon: ikEmbeddedDaemonPath(config) || null,
+          persistent: config.ikEmbeddedPersistent !== false,
           description: ikEmbeddedBackendDescription(config),
-          sessionCache: "llama state files next to IronMind context snapshots"
+          sessionCache: "llama state files next to IronMind context snapshots",
+          kvReuse: "persistent daemon reuses the current prompt prefix KV cache when available"
         },
         cpuPerformance: resolveCpuPerformanceConfig(config),
         nativeModel: config.nativeModel || null,
@@ -1443,12 +1461,16 @@ async function doctor(config) {
 
   if (isIkEmbeddedBackend(config)) {
     const runner = ikEmbeddedPath(config);
+    const daemon = ikEmbeddedDaemonPath(config);
     const runnerOk = runner && fs.existsSync(runner);
+    const daemonOk = daemon && fs.existsSync(daemon);
     const modelOk = config.ikLlamaModel && fs.existsSync(config.ikLlamaModel);
     console.log(`  ik embedded: ${runnerOk ? runner : "not built"}`);
+    console.log(`  ik daemon:   ${daemonOk ? daemon : "not built"}`);
     console.log(`  ik model:    ${modelOk ? config.ikLlamaModel : "not configured"}`);
+    console.log(`  persistent:  ${config.ikEmbeddedPersistent !== false && daemonOk ? "yes, model stays loaded and KV prefix is reused" : "no, one-shot process fallback"}`);
     console.log("  transport: direct ik_llama.cpp C++ wrapper, no llama-server HTTP");
-    if (!runnerOk || !modelOk) process.exitCode = 1;
+    if ((!runnerOk && !daemonOk) || !modelOk) process.exitCode = 1;
     return;
   }
 

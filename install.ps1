@@ -16,6 +16,7 @@ $RuntimeDir = Join-Path $UserRoot "runtimes\ik_llama.cpp"
 $RuntimeBin = Join-Path $RuntimeDir "build\bin\Release"
 $EmbeddedRuntimeDir = Join-Path $InstallDir "third_party\ik_llama.cpp"
 $EmbeddedRunner = Join-Path $InstallDir "build-ik\Release\ironmind-ik-native.exe"
+$EmbeddedDaemon = Join-Path $InstallDir "build-ik\Release\ironmind-ik-daemon.exe"
 $ModelDir = Join-Path $UserRoot "models\iurexa"
 $BaseModelPath = Join-Path $ModelDir "Qwen3-1.7B-F16.gguf"
 $ImatrixPath = Join-Path $ModelDir "iurexa-qwen3-1.7b-instruct-legal-it.imatrix"
@@ -121,7 +122,7 @@ function Ensure-IurexaModel {
 
 function Ensure-IronMindEmbeddedRuntime {
     if ($SkipRuntimeBuild) { return }
-    if (Test-Path $EmbeddedRunner) { return }
+    if ((Test-Path $EmbeddedRunner) -and (Test-Path $EmbeddedDaemon)) { return }
 
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
         Write-Warning "Git was not found. Skipping embedded ik_llama.cpp runtime build."
@@ -155,7 +156,7 @@ function Ensure-IronMindEmbeddedRuntime {
         try {
             Write-Host "Building Iurexa embedded CPU runtime..."
             cmake -S . -B build-ik -DIRONMIND_WITH_IK_LLAMA=ON
-            cmake --build build-ik --config Release --target ironmind-ik-native
+            cmake --build build-ik --config Release --target ironmind-ik-native ironmind-ik-daemon
         } finally {
             Pop-Location
         }
@@ -203,7 +204,7 @@ if (-not (Test-Path $ConfigPath)) {
     $serverPath = Join-Path $RuntimeBin "llama-server.exe"
     $workerPath = Join-Path $RuntimeBin "llama-cli.exe"
     $backend = "ik_embedded"
-    if (-not ((Test-Path $EmbeddedRunner) -and (Test-Path $QuantModelPath))) {
+    if (-not ((Test-Path $EmbeddedDaemon) -and (Test-Path $QuantModelPath))) {
         $backend = "ik_worker"
     }
     if (($backend -eq "ik_worker") -and -not ((Test-Path $workerPath) -and (Test-Path $QuantModelPath))) {
@@ -220,6 +221,8 @@ if (-not (Test-Path $ConfigPath)) {
   "ikLlamaServer": "$($serverPath.Replace('\', '\\'))",
   "ikLlamaWorker": "$($workerPath.Replace('\', '\\'))",
   "ikEmbeddedRunner": "$($EmbeddedRunner.Replace('\', '\\'))",
+  "ikEmbeddedDaemon": "$($EmbeddedDaemon.Replace('\', '\\'))",
+  "ikEmbeddedPersistent": true,
   "ikLlamaModel": "$($QuantModelPath.Replace('\', '\\'))",
   "cpuOnly": true,
   "cpuProfile": "low-latency",

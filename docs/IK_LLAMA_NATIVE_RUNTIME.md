@@ -9,8 +9,9 @@ The practical path is:
 2. `ik_llama.cpp` owns GGUF execution, CPU kernels, quantized matmul, KV cache, and token generation.
 3. The first integration ran `ik_llama.cpp` through its `llama-server` process.
 4. The native-local worker integration can run `llama-cli` as `ik_worker`, avoiding the HTTP server hop.
-5. The embedded probe links directly against pinned `ik_llama.cpp` through `llama.h` as `ik_embedded`.
-6. A later integration can replace the remaining process-per-request boundary with a persistent C ABI or Node native binding.
+5. The embedded runtime links directly against pinned `ik_llama.cpp` through `llama.h` as `ik_embedded`.
+6. The persistent embedded daemon keeps the model loaded and reuses the current prompt-prefix KV cache.
+7. A later integration can replace the remaining process boundary with a C ABI or Node native binding.
 
 This avoids depending on Ollama for production CPU inference while keeping IronMind
 small enough to evolve.
@@ -62,6 +63,7 @@ For a direct linked runtime probe, build the pinned submodule:
 npm run native:ik:build
 $env:IRONMIND_BACKEND="ik_embedded"
 $env:IRONMIND_IK_EMBEDDED_RUNNER="C:\Users\mikfo\Documents\IRONMIND\build-ik\Release\ironmind-ik-native.exe"
+$env:IRONMIND_IK_EMBEDDED_DAEMON="C:\Users\mikfo\Documents\IRONMIND\build-ik\Release\ironmind-ik-daemon.exe"
 $env:IRONMIND_IK_LLAMA_MODEL="C:\models\iurexa.gguf"
 $env:IRONMIND_CPU_ONLY="true"
 ironmind
@@ -70,9 +72,11 @@ ironmind
 In `ik_embedded` mode, IronMind calls `ironmind-ik-native`, a small C++ wrapper
 that links to `ik_llama.cpp` and uses `llama_model_load_from_file`,
 `llama_tokenize`, `llama_decode`, greedy token generation, and
-`llama_state_save_file`. This removes both the HTTP hop and the dependency on
-`llama-cli` prompt parsing. It is still a process per request and still reloads
-the model until the persistent ABI/Node binding is implemented.
+`llama_state_save_file`. When `ironmind-ik-daemon` is present, IronMind uses the
+daemon instead: one hidden native process stays alive, the model remains loaded,
+requests are serialized over JSONL, and unchanged prompt-prefix tokens are kept
+in the KV cache. This removes both the HTTP hop and the per-request model load.
+The one-shot runner remains available as a fallback.
 
 The public product name for this managed CPU path is **Iurexa**, with API
 model id `iurexa`. `ik_llama.cpp` remains the runtime, and the GGUF path
@@ -112,13 +116,13 @@ The process boundary is the safest first native step:
 
 ## Next Step: Direct Native Binding
 
-The `ik_embedded` probe validates direct source-level linking. The next
-milestone is making that adapter persistent:
+The persistent `ik_embedded` daemon validates direct source-level linking and
+model reuse. The next milestone is moving that adapter in-process:
 
 - keep `third_party/ik_llama.cpp` pinned and update it intentionally;
 - expose a minimal C ABI for model load, tokenize, decode, KV save/restore, and free;
-- create a Node native addon or a long-lived local worker process with a binary protocol;
-- map IronMind session snapshots to the runtime KV cache;
+- create a Node native addon or C ABI bridge;
+- map multiple IronMind session snapshots to independent runtime KV slots;
 - keep the public model id `iurexa` stable while changing only the internal
   transport.
 

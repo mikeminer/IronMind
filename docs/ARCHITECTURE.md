@@ -12,7 +12,7 @@ The bootstrap keeps the product surface usable while the native backend is devel
 5. Session and KV-cache manager
 6. Native CPU backend
 
-During pre-alpha, layer 6 can use the built IronMind CPU backend for local GGUF prefill/generation, with the Ollama/llama.cpp-compatible backend still used for interactive chat unless native mode is explicitly selected.
+During pre-alpha, layer 6 can use the built IronMind CPU backend for local GGUF prefill/generation, the direct `ik_embedded` daemon for interactive CPU-only chat, or an Ollama/llama.cpp-compatible fallback when explicitly selected.
 
 ## Implemented Foundations
 
@@ -33,6 +33,7 @@ During pre-alpha, layer 6 can use the built IronMind CPU backend for local GGUF 
 - IronKV disk-cache container with native payload support: `lib/ironkv.mjs` and `native/ironmind_forward.c`.
 - Persistent disk context snapshots with `.ironctx.json` sidecars and `.ironkv` payload files: `lib/contextStore.mjs`.
 - Server-side native backend selector and runner adapter: `lib/nativeBackend.mjs`.
+- Persistent `ik_llama.cpp` daemon bridge: `native/ironmind_ik_daemon.cpp` and `lib/ikEmbedded.mjs`.
 
 The native pieces now load real GGUF tensor views, validate supported quantized matvec formats, route MoE experts, decode through GGUF-backed Qwen3 tensors, and compare logits/token argmax against the F32 reference path.
 
@@ -82,6 +83,7 @@ The default budget is `IRONMIND_NATIVE_CACHE_MB=512` with `IRONMIND_NATIVE_CACHE
 11. Save RAM KV state into IronKV and restore it across process restarts for 100k+ token sessions. Implemented for the native F32 KV payload and wired into server session snapshots.
 12. Canonicalize and replay tool definitions, assistant tool calls, and tool responses. Implemented for prompt rendering and generated `<tool_call>` extraction.
 13. Route server completions to the IronMind CPU backend when a local GGUF is configured. Implemented with `auto`, `ollama`, and explicit `native` modes; native can discover Ollama GGUF blobs but remains a correctness-first path until prompt prefill and large-matrix reads are optimized.
+14. Add a persistent `ik_llama.cpp` bridge for interactive CPU chat. Implemented as `ik_embedded` with `ironmind-ik-daemon`, which keeps the model loaded and reuses the active prompt-prefix KV cache.
 
 ## API Surface
 
@@ -96,5 +98,5 @@ Initial:
 Planned:
 
 - disk-backed session switching;
-- long-lived in-process native model residency.
+- in-process native model residency beyond the current persistent daemon.
 - fast native prefill/decode suitable for interactive chat.
