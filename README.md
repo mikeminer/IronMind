@@ -128,6 +128,10 @@ The reproducible Iurexa quantization path, including Italian legal calibration,
 `docs/IUREXA_QUANTIZATION.md`.
 The local PDF/DOCX/TXT upload, extraction, chunking, citation, comparison, and
 report workflow is documented in `docs/IUREXA_DOCUMENT_RAG.md`.
+For Magistra Desktop packaging, `iurexa-runtime.exe` is the headless local
+OpenAI-compatible daemon: it keeps the GGUF model loaded, binds to `127.0.0.1`,
+and exposes `GET /health`, `GET /v1/models`, and
+`POST /v1/chat/completions`. See `docs/IUREXA_RUNTIME.md`.
 
 ## Design
 

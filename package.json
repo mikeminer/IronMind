@@ -14,7 +14,7 @@
     "map": "node ./tools/map-tensors.mjs",
     "eval": "node ./tools/eval-suite.mjs",
     "native:build": "cmake -S . -B build && cmake --build build --config Release",
-    "native:ik:build": "cmake -S . -B build-ik -DIRONMIND_WITH_IK_LLAMA=ON && cmake --build build-ik --config Release --target ironmind-ik-native ironmind-ik-daemon",
+    "native:ik:build": "cmake -S . -B build-ik -DIRONMIND_WITH_IK_LLAMA=ON && cmake --build build-ik --config Release --target ironmind-ik-native ironmind-ik-daemon iurexa-runtime",
     "native:test": "npm run native:build && .\\build\\Release\\ironmind-math-test.exe && .\\build\\Release\\ironmind-simd-test.exe && .\\build\\Release\\ironmind-quant-test.exe && .\\build\\Release\\ironmind-gguf-test.exe && .\\build\\Release\\ironmind-moe-test.exe && .\\build\\Release\\ironmind-forward-test.exe && .\\build\\Release\\ironmind-qwen3-test.exe",
     "test": "node ./tools/test-foundations.mjs",
     "check": "node --check ./bin/ironmind.mjs && node --check ./lib/documentStore.mjs && node --check ./lib/ikWorker.mjs && node --check ./lib/ikEmbedded.mjs && node --check ./tools/inspect-gguf.mjs && node --check ./tools/tokenize.mjs && node --check ./tools/map-tensors.mjs && node --check ./tools/eval-suite.mjs && node --check ./public/app.js && node ./tools/test-foundations.mjs && node ./tools/eval-suite.mjs stats"
